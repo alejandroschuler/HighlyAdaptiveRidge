@@ -1,3 +1,5 @@
+from sklearn.base import BaseEstimator, RegressorMixin
+from sklearn.model_selection import GridSearchCV
 from sklearn.linear_model import Lasso, LassoCV, RidgeCV
 from sklearn.linear_model._coordinate_descent import _alpha_grid
 from sklearn.preprocessing import StandardScaler
@@ -144,12 +146,23 @@ class HARCV(HABaseCV):
             self.regression.alphas = self.alphas
 
     def fit_kernel(self, X, Y):
-        self._pre_fit()
+        self._pre_fit(X, Y)
+
+        self.search = GridSearchCV(
+            estimator = KernelHAR(), 
+            param_grid = {'alpha': self.regression.alphas}, 
+            cv=5, scoring='neg_mean_squared_error', 
+            n_jobs=-1
+        )
+        self.search.fit(X, Y)
+
+    def predict_kernel(self, X):
+        return self.search.best_estimator_.predict(X)
 
 
-class KernelHAR:
+class KernelHAR(BaseEstimator, RegressorMixin):
 
-    def __init__(self, alpha):
+    def __init__(self, alpha=1):
         self.alpha = alpha # regularization strength
         self.X = None # training data
         self.centerer = KernelCenterer() 
