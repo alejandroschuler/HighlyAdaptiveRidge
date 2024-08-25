@@ -122,13 +122,14 @@ class HARCV(HABaseCV):
     def __init__(
         self, *args, kernel=True, 
         n_alphas=100, eps=1e-3, alphas=None,
-        **kwargs
+        cv=None, **kwargs
         ):
         self.scaler = StandardScaler(with_mean=True, with_std=False)
-        self.regression = RidgeCV(*args, **kwargs)
+        self.regression = RidgeCV(*args, cv=cv, **kwargs)
         self.n_alphas = n_alphas
         self.eps = eps
         self.alphas = alphas
+        self.cv = cv
 
         if kernel is True:
             self.fit = self.fit_kernel
@@ -140,6 +141,8 @@ class HARCV(HABaseCV):
         as LassoCV. Moreover the CV in RidgeCV is LOOCV since the LOOCV error can be exactly computed for 
         ridge from the model fit on full data.
         '''
+        # this is not a great way to set alphas because it looks at Y and X but we will
+        # regress Y on H(X), not X.
         if self.alphas is None:
             self.regression.alphas = _alpha_grid(X,Y, l1_ratio=1e-3, eps=self.eps, n_alphas=self.n_alphas)
         else:
@@ -151,7 +154,7 @@ class HARCV(HABaseCV):
         self.search = GridSearchCV(
             estimator = KernelHAR(), 
             param_grid = {'alpha': self.regression.alphas}, 
-            cv=5, scoring='neg_mean_squared_error', 
+            cv=self.cv, scoring='neg_mean_squared_error', 
             n_jobs=-1
         )
         self.search.fit(X, Y)
@@ -170,7 +173,7 @@ class KernelHAR(BaseEstimator, RegressorMixin):
     def fit(self, X, Y):
         self.X = X
         self.intercept = np.mean(Y)
-        K = self.centerer.fit_transform(self._kernel(self.X, X))
+        K = self.centerer.fit_transform(self._kernel(self.X))
         self.coef = solve(
             K + self.alpha*np.eye(K.shape[0]), 
             Y-self.intercept
@@ -182,7 +185,11 @@ class KernelHAR(BaseEstimator, RegressorMixin):
 
     @staticmethod
     @njit
-    def _kernel(X_train, X_prime):
+    def _kernel(X_train, X_prime=None):
+        if X_prime is None:
+            X_prime = X_train
+            equal = True
+
         n_train = X_train.shape[0]
         n_prime = X_prime.shape[0]
         n_features = X_train.shape[1]
@@ -214,7 +221,7 @@ class KernelHAR(BaseEstimator, RegressorMixin):
 
 
 
-## ~~~ Test kernel function and centering ~~~
+# # ~~~ Test kernel function and centering ~~~
 
 # import numpy as np
 # from highly_adaptive_regression import KernelHAR, HARCV, HALCV
@@ -227,6 +234,7 @@ class KernelHAR(BaseEstimator, RegressorMixin):
 
 # khar = KernelHAR(1)
 # K = khar._kernel(X,X)
+# Kk = khar._kernel(X,X_)
 # centerer = KernelCenterer()
 # Kc = centerer.fit_transform(K)
 # K, Kc
@@ -246,7 +254,7 @@ class KernelHAR(BaseEstimator, RegressorMixin):
 
 # Kkc = Kk - np.mean(Kk, axis=0) - np.mean(K, axis=1, keepdims=True) + np.mean(K)
 # Kkc_ = ((H @ H_.T - np.mean(H @ H_.T, axis=0)).T - np.mean(H @ H.T, axis=1) + np.mean(H @ H.T)).T
-# np.all(Kkc_ = KKc)
+# np.all(Kkc_ == Kkc)
 
 
 
