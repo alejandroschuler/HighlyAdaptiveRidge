@@ -18,11 +18,11 @@ class Timer:
     def __enter__(self):
         self.start = time.time()
         if self.verbose:
-            print(f"{self.current_task} : ...") 
+            print(f"{self.current_task} : ") 
         return self
 
     def __exit__(self, *args):
         duration = time.time() - self.start
         self.durations[self.current_task] = duration
         if self.verbose:
-            print(f"{self.current_task} : {duration}") 
+            print(f"{duration}") 
