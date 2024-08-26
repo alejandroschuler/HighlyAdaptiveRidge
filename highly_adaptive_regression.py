@@ -1,35 +1,19 @@
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.model_selection import GridSearchCV
-from sklearn.linear_model import Lasso, LassoCV, RidgeCV
+from sklearn.linear_model import Lasso, LassoCV, RidgeCV, Ridge
 from sklearn.linear_model._coordinate_descent import _alpha_grid
 from sklearn.preprocessing import StandardScaler
 
-from numba import njit
+from numba import njit, prange
 import numpy as np
 from scipy.linalg import solve
 
-
-class KernelCenterer():
-    """
-    Centering transformer for kernel matrices. see: https://www.mlpack.org/papers/kpca.pdf#page=18.50
-    """
-
-    def __init__(self):
-        pass
-
-    def transform(self, K):
-        return K - np.mean(K, axis=0) - np.mean(self.K, axis=1, keepdims=True) + np.mean(self.K)
-
-    def fit_transform(self, K):
-        self.K = K
-        return self.transform(K)
+from timer import Timer
 
 
 class HABaseCV:
     """
-    Highly Adaptive Base (HABase) class.
-
-    This class implements the Highly Adaptive Lasso/Ridge algorithms.
+    Highly Adaptive Base (HABase) class. Implements the Highly Adaptive Lasso/Ridge algorithms.
     """
 
     @classmethod
@@ -62,16 +46,11 @@ class HABaseCV:
 
     def _bases(self, X):
         """
-        Computes the basis functions for the given input data.
-
-        This function computes the basis functions using the knot points and the input data.
-
+        Computes the basis functions for the given knots and input data.
         Args:
             X (ndarray): Input data.
-
         Returns:
             ndarray: Array of computed basis functions.
-
         """
         one_way_bases = np.stack([
             np.less_equal.outer(self.knots[:,j], X[:,j])
@@ -86,8 +65,7 @@ class HABaseCV:
 
     def fit(self, X, Y):
         """
-        Fits the HAL model to the given input data and target values.
-
+        Fits the HA_ model to the given input data and target values.
         Args:
             X (ndarray): Input data.
             Y (ndarray): Target values.
@@ -120,12 +98,13 @@ class HALCV(HABaseCV):
 class HARCV(HABaseCV):
 
     def __init__(
-        self, *args, kernel=True, 
+        self, *args, kernel=True, verbose=False,
         n_alphas=100, eps=1e-3, alphas=None,
         cv=None, **kwargs
         ):
         self.scaler = StandardScaler(with_mean=True, with_std=False)
         self.regression = RidgeCV(*args, cv=cv, **kwargs)
+        self.verbose = verbose
         self.n_alphas = n_alphas
         self.eps = eps
         self.alphas = alphas
@@ -141,79 +120,133 @@ class HARCV(HABaseCV):
         as LassoCV. Moreover the CV in RidgeCV is LOOCV since the LOOCV error can be exactly computed for 
         ridge from the model fit on full data.
         '''
-        # this is not a great way to set alphas because it looks at Y and X but we will
-        # regress Y on H(X), not X.
         if self.alphas is None:
-            self.regression.alphas = _alpha_grid(X,Y, l1_ratio=1e-3, eps=self.eps, n_alphas=self.n_alphas)
-        else:
-            self.regression.alphas = self.alphas
+            # n, d = X.shape
+            # m = Ridge(alpha=0.01)
+            # m.fit(X,Y)
+            # mse = np.mean((m.predict(X) - Y)**2)
+            # R2 = 1 - np.mean(mse/np.var(Y))
+            # alpha = (n * (3/2)**d) * (1-R2) / R2 
+            # self.alphas = alpha * np.array([2**k for k in range(-4,1)])
+            self.alphas = _alpha_grid(X,Y, l1_ratio=1e-3, eps=self.eps, n_alphas=self.n_alphas)
+        self.regression.alphas = self.alphas
 
     def fit_kernel(self, X, Y):
         self._pre_fit(X, Y)
 
-        self.search = GridSearchCV(
-            estimator = KernelHAR(), 
-            param_grid = {'alpha': self.regression.alphas}, 
-            cv=self.cv, scoring='neg_mean_squared_error', 
-            n_jobs=-1
-        )
-        self.search.fit(X, Y)
+        self.models = []
+        for alpha in self.alphas:
+            m = KernelHAR(alpha=alpha, verbose=self.verbose)
+            m.fit(X,Y)
+            self.models += [(m, m.loocv(Y))]
+
+        models, errors = zip(*self.models)
+        self.best = models[np.argmin(errors)]
 
     def predict_kernel(self, X):
-        return self.search.best_estimator_.predict(X)
+        # return self.search.best_estimator_.predict(X)
+        return self.best.predict(X)
 
 
 class KernelHAR(BaseEstimator, RegressorMixin):
 
-    def __init__(self, alpha=1):
+    def __init__(self, alpha=1, verbose=False):
         self.alpha = alpha # regularization strength
         self.X = None # training data
-        self.centerer = KernelCenterer() 
+        self.timer = Timer(verbose)
 
     def fit(self, X, Y):
         self.X = X
-        self.intercept = np.mean(Y)
-        K = self.centerer.fit_transform(self._kernel(self.X))
-        self.coef = solve(
-            K + self.alpha*np.eye(K.shape[0]), 
-            Y-self.intercept
-        )
+        n, _ = X.shape
+
+        with self.timer.task('compute kernel'):
+            self.K = self._kernel(self.X)
+
+        with self.timer.task('solve equation'):
+            self.B = np.vstack([
+                np.hstack([
+                    self.K + self.alpha*np.eye(n), np.ones((n,1))
+                ]),
+                np.hstack([
+                    np.ones((1,n)), np.zeros((1,1))
+                ])
+            ])
+            self.coef = solve(self.B, np.hstack([Y,np.zeros((1))]))
 
     def predict(self, X):
-        k = self.centerer.transform(self._kernel(self.X, X))
-        return k.T @ self.coef + self.intercept
+        with self.timer.task('compute test kernel'):
+            k = self._kernel(self.X, X)
+        return self._predict_kernel(k)
+
+    def _predict_kernel(self, K):
+        n, _ = K.shape
+        return np.hstack([K, np.ones((n,1))]) @ self.coef
 
     @staticmethod
-    @njit
-    def _kernel(X_train, X_prime=None):
-        if X_prime is None:
-            X_prime = X_train
-            equal = True
+    def _kernel(X_train, X_test=None):
+        # two separate helper methods are required because numba parallelization does not like the if-then 
+        if X_test is None:
+            return KernelHAR._kernel_train(X_train)
+        else:
+            return KernelHAR._kernel_test(X_train, X_test)
 
-        n_train = X_train.shape[0]
-        n_prime = X_prime.shape[0]
-        n_features = X_train.shape[1]
+    @staticmethod
+    @njit(parallel=True)
+    def _kernel_train(X):
+        n, d = X.shape
+        K = np.empty((n, n), dtype=np.int64)
+
+        for tr in prange(n):
+            max_index = tr + 1
+            for te in prange(max_index):
+                sum_val = 0
+                for knot in range(n):
+                    count = 0
+                    for feature in range(d):
+                        if X[knot, feature] <= min(X[tr, feature], X[te, feature]):
+                            count += 1
+                    sum_val += 2 ** count
+                K[te, tr] = sum_val
+                K[tr, te] = sum_val
+                
+        return K - n # account for the n "intercepts"
+
+    @staticmethod
+    @njit(parallel=True)
+    def _kernel_test(X_train, X_test):
+        n_train, d = X_train.shape
+        n_test, d = X_test.shape
         
-        K = np.empty((n_train, n_prime), dtype=np.int64)
-        equal = False
-        for tr in range(n_train):
-            if equal:
-                max_index = tr + 1
-            else:
-                max_index = n_prime
-            for te in range(max_index):
+        K = np.empty((n_test, n_train), dtype=np.int64)
+        for tr in prange(n_train):
+            for te in range(n_test):
                 sum_val = 0
                 for knot in range(n_train):
                     count = 0
-                    for feature in range(n_features):
-                        if X_train[knot, feature] <= min(X_train[tr, feature], X_prime[te, feature]):
+                    for feature in range(d):
+                        if X_train[knot, feature] <= min(X_train[tr, feature], X_test[te, feature]):
                             count += 1
                     sum_val += 2 ** count
-                K[tr, te] = sum_val
-                if equal:
-                    K[te, tr] = sum_val
+                K[te, tr] = sum_val
                 
         return K - n_train # account for the n "intercepts"
+
+    def loocv(self, Y):
+        """
+        Uses LOOCV for efficiency.
+        See https://is.mpg.de/fileadmin/user_upload/files/publications/pcw2005a7_[0].pdf#page=10.15
+
+        Returns LOOCV MSE
+        """
+        n, _ = self.K.shape
+        H = solve(
+            self.B.T, 
+            np.vstack([self.K, np.ones((1,n))])
+        )
+        Yhat = self._predict_kernel(self.K)
+        R = (Y - Yhat) / (1- np.diag(H))
+        return np.mean(R ** 2)
+
 
 
 
@@ -221,7 +254,7 @@ class KernelHAR(BaseEstimator, RegressorMixin):
 
 
 
-# # ~~~ Test kernel function and centering ~~~
+# ~~~ Test kernel function and centering ~~~
 
 # import numpy as np
 # from highly_adaptive_regression import KernelHAR, HARCV, HALCV
@@ -235,26 +268,16 @@ class KernelHAR(BaseEstimator, RegressorMixin):
 # khar = KernelHAR(1)
 # K = khar._kernel(X,X)
 # Kk = khar._kernel(X,X_)
-# centerer = KernelCenterer()
-# Kc = centerer.fit_transform(K)
-# K, Kc
 
 # har = HARCV(kernel=False, alphas=1)
 # har.knots = X
-# scaler = StandardScaler(with_mean=True, with_std=False)
 # H = har._bases(X).astype(int) 
 # H_ = har._bases(X_).astype(int) 
-# Hc = scaler.fit_transform(H)
-# Hc_ = scaler.transform(H)
 # K_ = (H @ H.T)
-# Kc_ = Hc @ Hc.T
+# Kk_ = (H_ @ H.T)
 
+# np.all(Kk == Kk_)
 # np.all(K == K_)
-# np.all(Kc == Kc_)
-
-# Kkc = Kk - np.mean(Kk, axis=0) - np.mean(K, axis=1, keepdims=True) + np.mean(K)
-# Kkc_ = ((H @ H_.T - np.mean(H @ H_.T, axis=0)).T - np.mean(H @ H.T, axis=1) + np.mean(H @ H.T)).T
-# np.all(Kkc_ == Kkc)
 
 
 
@@ -282,4 +305,29 @@ class KernelHAR(BaseEstimator, RegressorMixin):
 # rmse_khar = np.sqrt(np.mean((Y_khar - Y)**2))
 # np.abs((rmse_har - rmse_khar)/rmse_har) < 1e-2
 
+# rmse_har, rmse_khar, rmse_diff
+
+
+
+## ~~~ Test LOOCV for HAR vs. kernel HAR ~~~
+
+# import numpy as np
+# from highly_adaptive_regression import KernelHAR, HARCV, HALCV
+# n, n_ ,d  = 100, 100, 3
+
+# X = np.random.rand(n, d)  
+# X_ = np.random.rand(n_, d)   
+# Y = 10*np.random.rand(n)  
+
+# har = HARCV(n_alphas = 5, kernel=False)
+# har.fit(X,Y)
+# Y_har = har.predict(X_)
+# rmse_har = np.sqrt(np.mean((Y_har - Y)**2))
+
+# khar = HARCV(n_alphas = 5)
+# khar.fit(X,Y)
+# Y_khar = khar.predict(X_)
+# rmse_khar = np.sqrt(np.mean((Y_khar - Y)**2))
+
+# rmse_diff = np.sqrt(np.mean((Y_har - Y_khar)**2))
 # rmse_har, rmse_khar, rmse_diff

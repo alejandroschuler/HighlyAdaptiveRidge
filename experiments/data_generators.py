@@ -1,10 +1,14 @@
 import numpy as np
+from scipy.stats import norm
 
 class DGP:
     def sample(self, n):
         X = self.sample_X(n)
         Y = self.sample_Y(X)
         return X, Y
+
+    def sample_Y(self, X):
+        return self.f(X) + self.noise.rvs(size=X.shape[0])
 
 class UnifIndX(DGP):
     def __init__(self, d):
@@ -14,8 +18,9 @@ class UnifIndX(DGP):
         return np.random.uniform(-1, 1, size=(n, self.d))
 
 class Smooth(UnifIndX):
-    def __init__(self, d):
+    def __init__(self, d, noise=norm(0,1)):
         super().__init__(d)
+        self.noise = noise
         
         # draw a random subset of 1:d, more likely to be low-dimensional
         self.subsets = [np.random.choice(
@@ -24,14 +29,14 @@ class Smooth(UnifIndX):
             replace=False
         ) for k in range(d)]
         self.coefs = np.random.uniform(-2, 2, size=d)
+        self.freqs = np.random.exponential(1, size=d)
 
         def f(X):
-            return np.sum(
-                coef * np.sin(np.sum(X[:, subset], axis=1)) 
-                for (coef, subset) in zip(self.coefs, self.subsets)
-            )
-        
-        self.sample_Y = f
+            return np.sum([
+                coef * np.sin(freq*np.sum(X[:, subset], axis=1)) 
+                for (coef, freq, subset) in zip(self.coefs, self.freqs, self.subsets)
+            ], axis=0)
+        self.f = f
 
 # def f_general(X, d):
 # """
