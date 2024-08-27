@@ -61,7 +61,7 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
 
     def __init__(
         self, kernel, alphas=None, 
-        max_alpha_coef_norm=0.01, n_alphas=10, eps=1e-7, 
+        max_alpha_coef_norm=0.01, n_alphas=10, eps=1e-8, 
         verbose=False
     ):
         self.kernel=kernel
@@ -72,16 +72,11 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
         self.alphas = alphas
 
     def _pre_fit(self, X, Y):
-        # see: https://chatgpt.com/share/01b765c4-8fc3-41e7-b5af-9276d67be2e8
-        # each element of H^T @ Y is at most sum(|Y|) in magnitude
-        # so ||H^T @ Y|| <= sqrt(n) sum(|Y|)
         if self.alphas is None:
-            alpha_max = np.sqrt(len(Y)) * np.sum(np.abs(Y)) / (self.max_alpha_coef_norm * np.max(np.abs(Y)))
-            self.alphas = np.geomspace(alpha_max, alpha_max * self.eps, num=self.n_alphas)
+            self.alphas = self.kernel.alpha_grid(X, Y, self.max_alpha_coef_norm, self.n_alphas, self.eps)
 
     def fit(self, X, Y):
         self._pre_fit(X, Y)
-
         self.models = []
         for alpha in self.alphas:
             m = KernelRidge(kernel=self.kernel, alpha=alpha, verbose=self.verbose)
@@ -96,11 +91,11 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
 
 
 class HighlyAdaptiveRidge(KernelRidge):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, kernel=HighlyAdaptiveRidgeKernel(), **kwargs)
+    def __init__(self, *args, depth=np.inf, **kwargs):
+        super().__init__(*args, kernel=HighlyAdaptiveRidgeKernel(depth=depth), **kwargs)
 
 class HighlyAdaptiveRidgeCV(KernelRidgeCV):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, kernel=HighlyAdaptiveRidgeKernel(), **kwargs)
+    def __init__(self, *args, depth=np.inf, **kwargs):
+        super().__init__(*args, kernel=HighlyAdaptiveRidgeKernel(depth=depth), **kwargs)
 
 

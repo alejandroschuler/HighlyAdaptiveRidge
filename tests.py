@@ -2,7 +2,18 @@ import numpy as np
 import pytest
 from highly_adaptive_regression import HighlyAdaptiveRidgeCV as HARCV
 from kernel_ridge import HighlyAdaptiveRidge as kHAR, HighlyAdaptiveRidgeCV as kHARCV
-from kernel_ridge.kernels import HighlyAdaptiveRidgeKernel
+from kernel_ridge.kernels import HighlyAdaptiveRidgeKernel, comb_sum
+from math import comb
+
+def test_comb_sum():
+    def comb_sum_py(n,k):
+        return sum(comb(n, i) for i in range(1,k+1))
+
+    assert comb_sum(10,4) == comb_sum_py(10,4) 
+    assert comb_sum(13,5) == comb_sum_py(13,5)
+    assert comb_sum(6,5) == comb_sum_py(6,5)
+    assert comb_sum(100,1) == 100
+    assert comb_sum(4,4) == 2**4 - 1
 
 @pytest.fixture
 def data(request):
@@ -19,7 +30,7 @@ def data(request):
 #     n  n_ d  
 param_sets = [
     (10, 1, 3),
-    (10, 1, 8),
+    (3, 2, 16),
     (20, 5, 5),
     (25, 10, 2)
 ]
