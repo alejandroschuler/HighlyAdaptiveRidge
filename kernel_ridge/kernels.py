@@ -54,7 +54,12 @@ class HighlyAdaptiveRidgeKernel(Kernel):
         return super().alpha_grid(alpha_max, n_alphas, eps)
     
     def __call__(self, X, X_test=None):
+        # this is done like this so that the numba functions can be simple and compile nicely
         depth = min([X.shape[1], self.depth])
+        if self.order > 0:
+            if X_test is None:
+                return self.order_kernel(X, X, depth, order=self.order, equal=True) 
+            return self.order_kernel(X, X_test, depth, order=self.order, equal=False)
         if X_test is None:
             return self.kernel(X, X, depth, equal=True) 
         return self.kernel(X, X_test, depth, equal=False)
@@ -72,23 +77,23 @@ class HighlyAdaptiveRidgeKernel(Kernel):
                 sum_val = 0
                 for knot in range(n):
                     count = 0
-                    for feature in range(d):
-                        if X[knot, feature] <= min(X[tr, feature], X_test[te, feature]):
+                    for j in range(d):
+                        x, x_te, x_knot = X[tr,j], X_test[te,j], X[knot,j]
+                        if x_knot <= x and x_knot <= x_te:
                             count += 1
                     sum_val += comb_sum(count, depth)
-                    # sum_val += 2**count
+                    # sum_val += 2**count - 1
                 K[te, tr] = sum_val
                 if equal:
                     K[tr, te] = sum_val
         return K
 
-
     @staticmethod
     @njit(parallel=True)
-    def kernel_t(X, X_test, depth, equal, t=0):
+    def kernel(X, X_test, depth, order, equal):
         n, d = X.shape
         n_test, d = X_test.shape
-        t_fac_sq = fact_seq(t)**2
+        t_fac_sq = fact_seq(order)**2
         
         K = np.empty((n_test, n), dtype=np.float64)
         for tr in prange(n):
@@ -99,22 +104,24 @@ class HighlyAdaptiveRidgeKernel(Kernel):
                     prod_val = 1
                     term2 = np.empty((d), dtype=np.float64)
                     for j in range(d):
-                        x, x_te, x_knot =X[tr,j], X_test[te,j], X[knot,j]
+                        x, x_te, x_knot = X[tr,j], X_test[te,j], X[knot,j]
                         diff = x - x_knot
                         diff_te = x_te - x_knot
-                        if (diff>0) and (diff_te>0):
-                            term1 = (diff * diff_te)**t / t_fac_sq[-1]
+                        if (diff>=0) and (diff_te>=0):
+                            term1 = (diff * diff_te)**order / t_fac_sq[-1]
                         else:
                             term1 = 0
                         if knot == 0: 
                             # this only needs to be computed once for each j across all knots
-                            term2[j] = sum([(x*x_te)**k / t_fac_sq[k] for k in np.arange(1,t+1)]) 
+                            term2[j] = sum([(x*x_te)**k / t_fac_sq[k] for k in np.arange(1,order+1)]) 
                         prod_val *= (term1 + term2[j] + 1)
-                    sum_val += prod_val
+                    sum_val += prod_val - 1
                 K[te, tr] = sum_val
                 if equal:
                     K[tr, te] = sum_val
         return K
+
+LOOKUP_TABLE = np.array([1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800, 39916800, 479001600, 6227020800, 87178291200, 1307674368000, 20922789888000, 355687428096000, 6402373705728000, 121645100408832000, 2432902008176640000], dtype='int64')
 
 @njit
 def comb_sum(n, k):
@@ -126,8 +133,6 @@ def comb_sum(n, k):
         bincoef = bincoef * (n-i+1) / i
         total += bincoef
     return total
-
-LOOKUP_TABLE = np.array([1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800, 39916800, 479001600, 6227020800, 87178291200, 1307674368000, 20922789888000, 355687428096000, 6402373705728000, 121645100408832000, 2432902008176640000], dtype='int64')
 
 @njit
 def fact_seq(n):

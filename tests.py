@@ -52,8 +52,17 @@ def test_kernel_function(data):
     K = HighlyAdaptiveRidgeKernel()(X, X)
     Kk = HighlyAdaptiveRidgeKernel()(X, X_)
 
-    assert np.all(Kk == Kk_), "Kernel results for new data points do not match."
-    assert np.all(K == K_), "Kernel results for the same data points do not match."
+    assert np.all(Kk == Kk_), "Kernel results for new data points do not match bases."
+    assert np.all(K == K_), "Kernel results for the same data points do not match bases."
+
+    d = X.shape[1]
+    K_ = HighlyAdaptiveRidgeKernel().order_kernel(X, X, depth=d, equal=True, order=0)
+    K = HighlyAdaptiveRidgeKernel().kernel(X, X, depth=d, equal=True)
+    assert np.all(K==K_), "Order=0 and 0th order symmetric kernels don't match"
+
+    K_ = HighlyAdaptiveRidgeKernel().order_kernel(X, X_, depth=d, equal=False, order=0)
+    K = HighlyAdaptiveRidgeKernel().kernel(X, X_, depth=d, equal=False)
+    assert np.all(K==K_), "Order=0 and 0th order asymmetric kernels don't match"
 
 @pytest.mark.parametrize("data", param_sets_with_seeds, indirect=True)
 def test_HAR_vs_kernel_HAR(data):
