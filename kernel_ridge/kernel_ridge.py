@@ -92,10 +92,10 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
 
 class HighlyAdaptiveRidge(KernelRidge):
     def __init__(self, *args, depth=np.inf, order=0, **kwargs):
-        super().__init__(*args, kernel=HighlyAdaptiveRidgeKernel(depth=depth), **kwargs)
+        super().__init__(*args, kernel=HighlyAdaptiveRidgeKernel(depth=depth, order=order), **kwargs)
 
 class HighlyAdaptiveRidgeCV(KernelRidgeCV):
     def __init__(self, *args, depth=np.inf, order=0, **kwargs):
-        super().__init__(*args, kernel=HighlyAdaptiveRidgeKernel(depth=depth), **kwargs)
+        super().__init__(*args, kernel=HighlyAdaptiveRidgeKernel(depth=depth, order=order), **kwargs)
 
 
