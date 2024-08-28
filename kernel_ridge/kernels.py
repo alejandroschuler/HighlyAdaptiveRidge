@@ -56,38 +56,10 @@ class HighlyAdaptiveRidgeKernel(Kernel):
     def __call__(self, X, X_test=None):
         # this is done like this so that the numba functions can be simple and compile nicely
         depth = min([X.shape[1], self.depth])
-        if self.order > 0:
-            if X_test is None:
-                return self.order_kernel(X, X, depth, order=self.order, equal=True) 
-            return self.order_kernel(X, X_test, depth, order=self.order, equal=False)
         if X_test is None:
-            return self.kernel(X, X, depth, equal=True) 
-        return self.kernel(X, X_test, depth, equal=False)
-
-    @staticmethod
-    @njit(parallel=True)
-    def kernel(X, X_test, depth, equal):
-        n, d = X.shape
-        n_test, d = X_test.shape
+            return self.kernel(X, X, depth, order=self.order, equal=True) 
+        return self.kernel(X, X_test, depth, order=self.order, equal=False)
         
-        K = np.empty((n_test, n), dtype=np.float64)
-        for tr in prange(n):
-            max_index = tr + 1 if equal else n_test
-            for te in range(max_index):
-                sum_val = 0
-                for knot in range(n):
-                    count = 0
-                    for j in range(d):
-                        x, x_te, x_knot = X[tr,j], X_test[te,j], X[knot,j]
-                        if x_knot <= x and x_knot <= x_te:
-                            count += 1
-                    sum_val += comb_sum(count, depth)
-                    # sum_val += 2**count - 1
-                K[te, tr] = sum_val
-                if equal:
-                    K[tr, te] = sum_val
-        return K
-
     @staticmethod
     @njit(parallel=True)
     def kernel(X, X_test, depth, order, equal):
@@ -122,18 +94,6 @@ class HighlyAdaptiveRidgeKernel(Kernel):
         return K
 
 LOOKUP_TABLE = np.array([1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800, 39916800, 479001600, 6227020800, 87178291200, 1307674368000, 20922789888000, 355687428096000, 6402373705728000, 121645100408832000, 2432902008176640000], dtype='int64')
-
-@njit
-def comb_sum(n, k):
-    """
-    sum_i=1^k (n Choose i) 
-    """
-    bincoef, total = 1, 0
-    for i in np.arange(1, k+1):
-        bincoef = bincoef * (n-i+1) / i
-        total += bincoef
-    return total
-
 @njit
 def fact_seq(n):
     if n <= 20:
