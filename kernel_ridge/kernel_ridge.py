@@ -14,6 +14,9 @@ class KernelRidge(BaseEstimator, RegressorMixin):
         self.kernel = kernel
 
     def fit(self, X, Y):
+        """
+        Fit kernel ridge regression with an unregularized intercept
+        """
         self.X = X
         n, _ = X.shape
 
@@ -108,12 +111,17 @@ class HighlyAdaptiveRidge(KernelRidge):
     def __init__(self, *args, depth=np.inf, order=0, **kwargs):
         super().__init__(*args, kernel=kernels.HighlyAdaptiveRidge(depth=depth, order=order), **kwargs)
 
+
 class HighlyAdaptiveRidgeCV(KernelRidgeCV):
     def __init__(self, *args, depth=np.inf, order=0, **kwargs):
         super().__init__(*args, kernels=[kernels.HighlyAdaptiveRidge(depth=depth, order=order)], **kwargs)
+
 
 class RadialBasisKernelRidgeCV(KernelRidgeCV):
     def __init__(self, gammas, *args, **kwargs):
         super().__init__(*args, kernels=[kernels.RadialBasis(g) for g in gammas], **kwargs)
 
 
+class MixedSobolevRidgeCV(KernelRidgeCV):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, kernels=[kernels.MixedSobolev()], **kwargs)

@@ -5,11 +5,23 @@ import numpy as np
 
 
 class Kernel:
-    def alpha_grid(self, alpha_max, n_alphas, eps):
+    def alpha_grid_from_max(self, alpha_max, n_alphas, eps):
         return np.geomspace(alpha_max, alpha_max * eps, num=n_alphas)
 
     def __repr__(self):
         return f"{self.__class__.__name__}: {self.__dict__}"
+
+    def alpha_grid(self, X, Y, max_alpha_coef_norm, n_alphas, eps):
+        """
+        see: https://chatgpt.com/share/01b765c4-8fc3-41e7-b5af-9276d67be2e8
+        each element of H^T @ Y is at most sum(|Y|) in magnitude when H is binary
+        so ||H^T @ Y|| <= sqrt(d) sum(|Y|)
+
+        works ok...
+        """
+        n, p = X.shape
+        alpha_max = np.sqrt(float(n*(2**p-1))) * np.sum(np.abs(Y)) / (max_alpha_coef_norm * np.max(np.abs(Y)))
+        return self.alpha_grid_from_max(alpha_max, n_alphas, eps)
 
 
 class RadialBasis(Kernel):
@@ -37,7 +49,7 @@ class RadialBasis(Kernel):
         H = np.hstack((cos_WX, sin_WX)) / np.sqrt(d_)  
 
         alpha_max = np.linalg.norm(H.T @ Y)  / (max_alpha_coef_norm * np.max(np.abs(Y)))
-        return super().alpha_grid(alpha_max, n_alphas, eps)
+        return self.alpha_grid_from_max(alpha_max, n_alphas, eps)
 
 
 class HighlyAdaptiveRidge(Kernel):
@@ -45,18 +57,6 @@ class HighlyAdaptiveRidge(Kernel):
     def __init__(self, depth=np.inf, order=0):
         self.depth = depth
         self.order = order
-
-    def alpha_grid(self, X, Y, max_alpha_coef_norm, n_alphas, eps):
-        """
-        see: https://chatgpt.com/share/01b765c4-8fc3-41e7-b5af-9276d67be2e8
-        each element of H^T @ Y is at most sum(|Y|) in magnitude
-        so ||H^T @ Y|| <= sqrt(d) sum(|Y|)
-
-        works ok...
-        """
-        n, p = X.shape
-        alpha_max = np.sqrt(float(n*(2**p-1))) * np.sum(np.abs(Y)) / (max_alpha_coef_norm * np.max(np.abs(Y)))
-        return super().alpha_grid(alpha_max, n_alphas, eps)
     
     def __call__(self, X, X_test=None):
         # this is done like this so that the numba functions can be simple and compile nicely
@@ -68,9 +68,6 @@ class HighlyAdaptiveRidge(Kernel):
     @staticmethod
     @njit(parallel=True)
     def kernel(X, X_test, depth, order, equal):
-        """
-        TODO: re-implement depth arg? not sure if possible for higher-order case
-        """
         n, d = X.shape
         n_test, d = X_test.shape
         t_fac_sq = fact_seq(order)**2
@@ -116,5 +113,32 @@ def fact_seq(n):
 
 class MixedSobolev(Kernel):
     """
-    TODO: implement
+    The kernel described in eq. 39, example B.9 of Zhang and Simon:
+    https://projecteuclid.org/journals/electronic-journal-of-statistics/volume-17/issue-2/Regression-in-tensor-product-spaces-by-the-method-of-sieves/10.1214/23-EJS2188.full
     """
+    def __call__(self, X, X_test=None):
+        if X_test is None:
+            return self.kernel(X, X, equal=True)
+        return self.kernel(X_test, X, equal=False)
+
+    @staticmethod
+    @njit(parallel=True)
+    def kernel(X_test, X, equal):
+        n, d = X.shape
+        n_test, d = X_test.shape
+        factor = np.sinh(1)**(-d)
+        
+        K = np.empty((n_test, n), dtype=np.float64)
+        for tr in prange(n):
+            max_index = tr + 1 if equal else n_test
+            for te in range(max_index):
+                prod_val = 1.0
+                for j in range(d):
+                    x, x_te = X[tr,j], X_test[te,j]
+                    prod_val *= np.cosh(min(x, x_te))
+                    prod_val *= np.cosh(1-max(x, x_te))
+                element = prod_val * factor
+                K[te, tr] = element
+                if equal:
+                    K[tr, te] = element
+        return K
