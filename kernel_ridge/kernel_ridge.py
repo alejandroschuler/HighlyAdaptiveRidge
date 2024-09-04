@@ -2,7 +2,7 @@ import numpy as np
 from scipy.linalg import solve
 from sklearn.base import BaseEstimator, RegressorMixin
 from timer import Timer
-from .kernels import HighlyAdaptiveRidgeKernel
+from . import kernels
 
 
 class KernelRidge(BaseEstimator, RegressorMixin):
@@ -60,11 +60,11 @@ class KernelRidge(BaseEstimator, RegressorMixin):
 class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
 
     def __init__(
-        self, kernel, alphas=None, 
+        self, kernels, alphas=None, 
         max_alpha_coef_norm=0.01, n_alphas=10, eps=1e-8, 
         verbose=False
     ):
-        self.kernel=kernel
+        self.kernels=kernels
         self.verbose = verbose
         self.max_alpha_coef_norm = max_alpha_coef_norm # ||beta||2 (or smaller) desired for max alpha
         self.n_alphas = n_alphas
@@ -73,18 +73,32 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
 
     def _pre_fit(self, X, Y):
         if self.alphas is None:
-            self.alphas = self.kernel.alpha_grid(X, Y, self.max_alpha_coef_norm, self.n_alphas, self.eps)
+            self.alphas = [
+                k.alpha_grid(X, Y, self.max_alpha_coef_norm, self.n_alphas, self.eps) 
+                for k in self.kernels
+            ]
 
     def fit(self, X, Y):
         self._pre_fit(X, Y)
-        self.models = []
-        for alpha in self.alphas:
-            m = KernelRidge(kernel=self.kernel, alpha=alpha, verbose=self.verbose)
-            m.fit(X,Y)
-            self.models += [(m, m.loocv(Y))]
+        self.cv_results = []
+        for kernel, alphas in zip(self.kernels, self.alphas):
+            kernel_cv_results = []
+            for alpha in alphas:
+                m = KernelRidge(kernel=kernel, alpha=alpha, verbose=self.verbose)
+                m.fit(X,Y)
+                kernel_cv_results += [(m, m.loocv(Y))]
 
-        models, errors = zip(*self.models)
-        self.best = models[np.argmin(errors)]
+            fits, errors = zip(*kernel_cv_results)
+            best_index = np.argmin(errors)
+            if best_index == 0:
+                print(f"Warning: selected regularization is the largest grid value for {kernel}")
+            if best_index == len(fits)-1:
+                print(f"Warning: selected regularization is the smallest grid value for {kernel}")
+            self.cv_results += kernel_cv_results
+
+        fits, errors = zip(*self.cv_results)
+        best_index = np.argmin(errors)
+        self.best = fits[best_index]
 
     def predict(self, X):
         return self.best.predict(X)
@@ -92,10 +106,14 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
 
 class HighlyAdaptiveRidge(KernelRidge):
     def __init__(self, *args, depth=np.inf, order=0, **kwargs):
-        super().__init__(*args, kernel=HighlyAdaptiveRidgeKernel(depth=depth, order=order), **kwargs)
+        super().__init__(*args, kernel=kernels.HighlyAdaptiveRidge(depth=depth, order=order), **kwargs)
 
 class HighlyAdaptiveRidgeCV(KernelRidgeCV):
     def __init__(self, *args, depth=np.inf, order=0, **kwargs):
-        super().__init__(*args, kernel=HighlyAdaptiveRidgeKernel(depth=depth, order=order), **kwargs)
+        super().__init__(*args, kernels=[kernels.HighlyAdaptiveRidge(depth=depth, order=order)], **kwargs)
+
+class RadialBasisKernelRidgeCV(KernelRidgeCV):
+    def __init__(self, gammas, *args, **kwargs):
+        super().__init__(*args, kernels=[kernels.RadialBasis(g) for g in gammas], **kwargs)
 
 

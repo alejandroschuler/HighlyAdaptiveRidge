@@ -8,8 +8,11 @@ class Kernel:
     def alpha_grid(self, alpha_max, n_alphas, eps):
         return np.geomspace(alpha_max, alpha_max * eps, num=n_alphas)
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}: {self.__dict__}"
 
-class GaussianKernel(Kernel):
+
+class RadialBasis(Kernel):
     def __init__(self, gamma):
         self.gamma = gamma
 
@@ -37,7 +40,7 @@ class GaussianKernel(Kernel):
         return super().alpha_grid(alpha_max, n_alphas, eps)
 
 
-class HighlyAdaptiveRidgeKernel(Kernel):
+class HighlyAdaptiveRidge(Kernel):
 
     def __init__(self, depth=np.inf, order=0):
         self.depth = depth
@@ -48,6 +51,8 @@ class HighlyAdaptiveRidgeKernel(Kernel):
         see: https://chatgpt.com/share/01b765c4-8fc3-41e7-b5af-9276d67be2e8
         each element of H^T @ Y is at most sum(|Y|) in magnitude
         so ||H^T @ Y|| <= sqrt(d) sum(|Y|)
+
+        works ok...
         """
         n, p = X.shape
         alpha_max = np.sqrt(float(n*(2**p-1))) * np.sum(np.abs(Y)) / (max_alpha_coef_norm * np.max(np.abs(Y)))
@@ -63,6 +68,9 @@ class HighlyAdaptiveRidgeKernel(Kernel):
     @staticmethod
     @njit(parallel=True)
     def kernel(X, X_test, depth, order, equal):
+        """
+        TODO: re-implement depth arg? not sure if possible for higher-order case
+        """
         n, d = X.shape
         n_test, d = X_test.shape
         t_fac_sq = fact_seq(order)**2
@@ -103,3 +111,10 @@ def fact_seq(n):
     for i in np.arange(21, n+1):
         seq[i] = seq[i-1]*i
     return seq
+
+
+
+class MixedSobolev(Kernel):
+    """
+    TODO: implement
+    """

@@ -76,4 +76,4 @@ class HighlyAdaptiveRidgeCV(HighlyAdaptiveBaseCV, kHARCV):
 
     def _pre_fit(self, X,Y):
         kHARCV._pre_fit(self, X, Y) # use the same method as kHARCV to set alpha grid
-        self.regression.alphas = self.alphas
+        self.regression.alphas = self.alphas[0]

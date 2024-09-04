@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from highly_adaptive_regression import HighlyAdaptiveRidgeCV as HARCV
 from kernel_ridge import HighlyAdaptiveRidge as kHAR, HighlyAdaptiveRidgeCV as kHARCV
-from kernel_ridge.kernels import HighlyAdaptiveRidgeKernel
+from kernel_ridge import kernels
 
 @pytest.fixture
 def data(request):
@@ -38,8 +38,8 @@ def test_kernel_function(data):
     K_ = (H @ H.T)
     Kk_ = (H_ @ H.T)
 
-    K = HighlyAdaptiveRidgeKernel()(X, X)
-    Kk = HighlyAdaptiveRidgeKernel()(X, X_)
+    K = kernels.HighlyAdaptiveRidge()(X, X)
+    Kk = kernels.HighlyAdaptiveRidge()(X, X_)
 
     assert np.all(Kk == Kk_), "Kernel results for new data points do not match bases."
     assert np.all(K == K_), "Kernel results for the same data points do not match bases."
