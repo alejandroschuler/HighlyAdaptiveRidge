@@ -7,7 +7,7 @@ csv/yearmsd.csv
 csv/.DS_Store
 *.pickle
 df_pickles/*.pickle
-scratch.ipynb
+# scratch.ipynb
 
 # Editors
 .vscode/
