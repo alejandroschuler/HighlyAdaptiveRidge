@@ -1,9 +1,9 @@
 import numpy as np
-from scipy.linalg import solve
 from sklearn.base import BaseEstimator, RegressorMixin
 from timer import Timer
 from . import kernels
-
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.pipeline import Pipeline
 
 class KernelRidge(BaseEstimator, RegressorMixin):
 
@@ -16,15 +16,14 @@ class KernelRidge(BaseEstimator, RegressorMixin):
     def fit(self, X, Y):
         """
         Fit kernel ridge regression with an unregularized intercept
+        See https://is.mpg.de/fileadmin/user_upload/files/publications/pcw2005a7_[0].pdf#page=10.15
         """
         self.X = X
         n, _ = X.shape
 
         with self.timer.task('compute kernel'):
             self.K = self.kernel(self.X)
-
-        with self.timer.task('solve equation'):
-            self.B = np.vstack([
+            self.K_ = np.vstack([
                 np.hstack([
                     self.K + self.alpha*np.eye(n), np.ones((n,1))
                 ]),
@@ -32,7 +31,21 @@ class KernelRidge(BaseEstimator, RegressorMixin):
                     np.ones((1,n)), np.zeros((1,1))
                 ])
             ])
-            self.coef = solve(self.B, np.hstack([Y,np.zeros((1))]))
+            Y_ = np.hstack([Y,np.zeros((1))])
+
+        with self.timer.task('solve equation'):
+            self.coef = self.solve(self.K_, Y_)
+
+    @staticmethod
+    def solve(A, B):
+        try:
+            ans = np.linalg.solve(A, B)
+        except np.linalg.LinAlgError as e:
+            if 'Singular matrix' in str(e): # this kills the theory but at least it returns something
+                return np.linalg.pinv(A) @ B, "Warning: Singular matrix, solution using pseudoinverse."
+            else:
+                return f"Error: {str(e)}"
+        return ans
 
     def predict(self, X):
         with self.timer.task('compute test kernel'):
@@ -51,8 +64,8 @@ class KernelRidge(BaseEstimator, RegressorMixin):
         Returns LOOCV MSE
         """
         n, _ = self.K.shape
-        H = solve(
-            self.B.T, 
+        H = self.solve(
+            self.K_.T, 
             np.vstack([self.K, np.ones((1,n))])
         )
         Yhat = self._predict_kernel(self.K)
@@ -93,9 +106,9 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
 
             fits, errors = zip(*kernel_cv_results)
             best_index = np.argmin(errors)
-            if best_index == 0:
+            if best_index == 0 and errors[0]/errors[1] < 0.95:
                 print(f"Warning: selected regularization is the largest grid value for {kernel}")
-            if best_index == len(fits)-1:
+            if best_index == len(fits)-1 and errors[-1]/errors[-2] < 0.95:
                 print(f"Warning: selected regularization is the smallest grid value for {kernel}")
             self.cv_results += kernel_cv_results
 
@@ -107,21 +120,33 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
         return self.best.predict(X)
 
 
-class HighlyAdaptiveRidge(KernelRidge):
-    def __init__(self, *args, depth=np.inf, order=0, **kwargs):
-        super().__init__(*args, kernel=kernels.HighlyAdaptiveRidge(depth=depth, order=order), **kwargs)
-
-
 class HighlyAdaptiveRidgeCV(KernelRidgeCV):
-    def __init__(self, *args, depth=np.inf, order=0, **kwargs):
-        super().__init__(*args, kernels=[kernels.HighlyAdaptiveRidge(depth=depth, order=order)], **kwargs)
+    def __init__(self, depth=np.inf, order=0, **kwargs):
+        super().__init__(kernels=[kernels.HighlyAdaptiveRidge(depth=depth, order=order)], **kwargs)
 
 
 class RadialBasisKernelRidgeCV(KernelRidgeCV):
-    def __init__(self, gammas, *args, **kwargs):
-        super().__init__(*args, kernels=[kernels.RadialBasis(g) for g in gammas], **kwargs)
+    def __init__(self, gammas, **kwargs):
+        super().__init__(kernels=[kernels.RadialBasis(g) for g in gammas], **kwargs)
 
 
-class MixedSobolevRidgeCV(KernelRidgeCV):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, kernels=[kernels.MixedSobolev()], **kwargs)
+
+class ClippedMinMaxScaler(MinMaxScaler):
+    def transform(self, X):
+        return np.clip(super().transform(X), 0, 1)
+
+class UnscaledMixedSobolevRidgeCV(KernelRidgeCV):
+    def __init__(self, **kwargs):
+        super().__init__(kernels=[kernels.MixedSobolev()], **kwargs)
+
+class MixedSobolevRidgeCV(Pipeline):
+    def __init__(self, **kwargs):
+        super().__init__([
+            ('scaler', ClippedMinMaxScaler()),
+            ('learner', UnscaledMixedSobolevRidgeCV(**kwargs)),
+        ])
+
+    def __getattr__(self, name):
+        if hasattr(self.named_steps['learner'], name):
+            return getattr(self.named_steps['learner'], name)
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")

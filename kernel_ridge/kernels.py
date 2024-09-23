@@ -1,3 +1,7 @@
+"""
+Kernel functions for use with kernel ridge regression. All functions are compiled 
+with numba so that they run quickly and in parallel.
+"""
 
 from sklearn.metrics.pairwise import rbf_kernel
 from numba import njit, prange
@@ -24,14 +28,35 @@ class Kernel:
         return self.alpha_grid_from_max(alpha_max, n_alphas, eps)
 
 
+
 class RadialBasis(Kernel):
     def __init__(self, gamma):
         self.gamma = gamma
 
     def __call__(self, X, X_test=None):
         if X_test is None:
-            return rbf_kernel(X, X, gamma=self.gamma)
-        return rbf_kernel(X_test, X, gamma=self.gamma)
+            return self.kernel(X, X, equal=True, gamma=self.gamma)
+        return self.kernel(X_test, X, equal=False, gamma=self.gamma)
+
+    @staticmethod
+    @njit(parallel=True)
+    def kernel(X_test, X, equal, gamma):
+        n, d = X.shape
+        n_test, d = X_test.shape
+        
+        K = np.empty((n_test, n), dtype=np.float64)
+        for tr in prange(n):
+            max_index = tr + 1 if equal else n_test
+            for te in range(max_index):
+                sum_val = 0.0
+                for j in range(d):
+                    x, x_te = X[tr,j], X_test[te,j]
+                    sum_val += (x - x_te)**2
+                element = np.exp(-sum_val * gamma)
+                K[te, tr] = element
+                if equal:
+                    K[tr, te] = element
+        return K
             
     def alpha_grid(self, X, Y, max_alpha_coef_norm, n_alphas, eps):
         """
@@ -50,6 +75,7 @@ class RadialBasis(Kernel):
 
         alpha_max = np.linalg.norm(H.T @ Y)  / (max_alpha_coef_norm * np.max(np.abs(Y)))
         return self.alpha_grid_from_max(alpha_max, n_alphas, eps)
+
 
 
 class HighlyAdaptiveRidge(Kernel):
