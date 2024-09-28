@@ -8,21 +8,24 @@ from sklearn.pipeline import Pipeline
 class KernelRidge(BaseEstimator, RegressorMixin):
 
     def __init__(self, kernel, alpha=1, verbose=False):
-        self.alpha = alpha # regularization strength
-        self.X = None # training data
-        self.timer = Timer(verbose)
         self.kernel = kernel
+        self.alpha = alpha # regularization strength
+        self.timer = Timer(verbose)
+        self.X = None # training data
+        self.K = None # kernel matrix
 
-    def fit(self, X, Y):
+    def fit(self, X, Y, K=None):
         """
         Fit kernel ridge regression with an unregularized intercept
         See https://is.mpg.de/fileadmin/user_upload/files/publications/pcw2005a7_[0].pdf#page=10.15
         """
         self.X = X
+        self.K = K
         n, _ = X.shape
 
         with self.timer.task('compute kernel'):
-            self.K = self.kernel(self.X)
+            if self.K is None:
+                self.K = self.kernel(self.X)
             self.K_ = np.vstack([
                 np.hstack([
                     self.K + self.alpha*np.eye(n), np.ones((n,1))
@@ -47,9 +50,10 @@ class KernelRidge(BaseEstimator, RegressorMixin):
                 return f"Error: {str(e)}"
         return ans
 
-    def predict(self, X):
+    def predict(self, X, k=None):
         with self.timer.task('compute test kernel'):
-            k = self.kernel(self.X, X)
+            if k is None:
+                k = self.kernel(self.X, X)
         return self._predict_kernel(k)
 
     def _predict_kernel(self, K):
@@ -99,9 +103,10 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
         self.cv_results = []
         for kernel, alphas in zip(self.kernels, self.alphas):
             kernel_cv_results = []
+            K = kernel(X) # compute kernel once for all alpha, huge time saver
             for alpha in alphas:
                 m = KernelRidge(kernel=kernel, alpha=alpha, verbose=self.verbose)
-                m.fit(X,Y)
+                m.fit(X,Y, K=K)
                 kernel_cv_results += [(m, m.loocv(Y))]
 
             fits, errors = zip(*kernel_cv_results)

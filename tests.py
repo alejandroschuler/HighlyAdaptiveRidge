@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 from highly_adaptive_regression import HighlyAdaptiveRidgeCV as HARCV
-from kernel_ridge import HighlyAdaptiveRidge as kHAR, HighlyAdaptiveRidgeCV as kHARCV
+from kernel_ridge import HighlyAdaptiveRidgeCV as kHARCV, KernelRidge
 from kernel_ridge import kernels
 
 @pytest.fixture
@@ -53,7 +53,7 @@ def test_HAR_vs_kernel_HAR(data):
     Y_har = har.predict(X_)
     rmse_har = np.sqrt(np.mean((Y_har - Y_) ** 2))
 
-    khar = kHAR(alpha=har.regression.alpha_)
+    khar = KernelRidge(kernels.HighlyAdaptiveRidge(), alpha=har.regression.alpha_)
     khar.fit(X, Y)
     Y_khar = khar.predict(X_)
     rmse_khar = np.sqrt(np.mean((Y_khar - Y_) ** 2))
