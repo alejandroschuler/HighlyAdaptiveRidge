@@ -3,35 +3,27 @@ Kernel functions for use with kernel ridge regression. All functions are compile
 with numba so that they run quickly and in parallel.
 """
 
-from sklearn.metrics.pairwise import rbf_kernel
+from dataclasses import dataclass
 from numba import njit, prange
 import numpy as np
+from numpy.linalg import norm, eigvalsh
 
 
 class Kernel:
-    def alpha_grid_from_max(self, alpha_max, n_alphas, eps):
-        return np.geomspace(alpha_max, alpha_max * eps, num=n_alphas)
 
-    def __repr__(self):
-        return f"{self.__class__.__name__}: {self.__dict__}"
-
-    def alpha_grid(self, X, Y, max_alpha_coef_norm, n_alphas, eps):
+    def alpha_grid(self, Y, n_alphas, eps, alpha_min=1e-8, K=None, X=None):
         """
-        see: https://chatgpt.com/share/01b765c4-8fc3-41e7-b5af-9276d67be2e8
-        each element of H^T @ Y is at most sum(|Y|) in magnitude when H is binary
-        so ||H^T @ Y|| <= sqrt(d) sum(|Y|)
-
-        works ok...
+        see HAR paper appendix D
         """
-        n, p = X.shape
-        alpha_max = np.sqrt(float(n*(2**p-1))) * np.sum(np.abs(Y)) / (max_alpha_coef_norm * np.max(np.abs(Y)))
-        return self.alpha_grid_from_max(alpha_max, n_alphas, eps)
+        if K is None:
+            K = self.kernel(X, X, equal=True)
+        alpha_max = norm(Y) * np.max(norm(K, axis=1)) / (eps * np.max(np.abs(Y))) - np.min(eigvalsh(K))
+        return np.geomspace(alpha_min, alpha_max, num=n_alphas)
 
 
-
+@dataclass
 class RadialBasis(Kernel):
-    def __init__(self, gamma):
-        self.gamma = gamma
+    gamma: float = 1
 
     def __call__(self, X, X_test=None):
         if X_test is None:
@@ -77,13 +69,11 @@ class RadialBasis(Kernel):
         return self.alpha_grid_from_max(alpha_max, n_alphas, eps)
 
 
-
+@dataclass
 class HighlyAdaptiveRidge(Kernel):
+    depth: int = -1
+    order: int = 0
 
-    def __init__(self, depth=np.inf, order=0):
-        self.depth = depth
-        self.order = order
-    
     def __call__(self, X, X_test=None):
         # this is done like this so that the numba functions can be simple and compile nicely
         depth = min([X.shape[1], self.depth])
@@ -136,7 +126,7 @@ def fact_seq(n):
     return seq
 
 
-
+@dataclass
 class MixedSobolev(Kernel):
     """
     The kernel described in eq. 39, example B.9 of Zhang and Simon:

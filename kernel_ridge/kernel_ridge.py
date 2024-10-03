@@ -4,6 +4,7 @@ from timer import Timer
 from . import kernels
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.pipeline import Pipeline
+from sklearn.model_selection import KFold
 
 class KernelRidge(BaseEstimator, RegressorMixin):
 
@@ -21,26 +22,23 @@ class KernelRidge(BaseEstimator, RegressorMixin):
         """
         self.X = X
         self.K = K
-        n, _ = X.shape
-
-        with self.timer.task('compute kernel'):
-            if self.K is None:
+        if self.K is None:
+            with self.timer.task('compute kernel'):
                 self.K = self.kernel(self.X)
-            self.K_ = np.vstack([
-                np.hstack([
-                    self.K + self.alpha*np.eye(n), np.ones((n,1))
-                ]),
-                np.hstack([
-                    np.ones((1,n)), np.zeros((1,1))
-                ])
-            ])
-            Y_ = np.hstack([Y,np.zeros((1))])
-
         with self.timer.task('solve equation'):
-            self.coef = self.solve(self.K_, Y_)
+            self.coef = self._solve(*self._prep_fit(self.K, Y))
+        
+    def _prep_fit(self, K, Y):
+        n = len(Y)
+        K_ = np.vstack([
+            np.hstack([ K + self.alpha*np.eye(n), np.ones((n,1))  ]),
+            np.hstack([ np.ones((1,n))          , np.zeros((1,1)) ])
+        ])
+        Y_ = np.hstack([Y, np.zeros((1))])
+        return K_, Y_
 
     @staticmethod
-    def solve(A, B):
+    def _solve(A, B):
         try:
             ans = np.linalg.solve(A, B)
         except np.linalg.LinAlgError as e:
@@ -54,72 +52,76 @@ class KernelRidge(BaseEstimator, RegressorMixin):
         with self.timer.task('compute test kernel'):
             if k is None:
                 k = self.kernel(self.X, X)
-        return self._predict_kernel(k)
+        return self._predict_kernel(k, self.coef)
 
-    def _predict_kernel(self, K):
-        n, _ = K.shape
-        return np.hstack([K, np.ones((n,1))]) @ self.coef
+    @staticmethod
+    def _predict_kernel(k, coef):
+        n, _ = k.shape
+        return np.hstack([k, np.ones((n,1))]) @ coef
 
     def loocv(self, Y):
         """
         Uses LOOCV for efficiency.
+        This technically doesn't work for HAR since the kernel is data-adaptive- actually need to recompute kernel.
         See https://is.mpg.de/fileadmin/user_upload/files/publications/pcw2005a7_[0].pdf#page=10.15
 
         Returns LOOCV MSE
         """
         n, _ = self.K.shape
-        H = self.solve(
-            self.K_.T, 
+        K_, _ = self._prep_fit(self.K, Y)
+        H = self._solve(
+            K_.T, 
             np.vstack([self.K, np.ones((1,n))])
         )
-        Yhat = self._predict_kernel(self.K)
+        Yhat = self._predict_kernel(self.K, self.coef)
         R = (Y - Yhat) / (1- np.diag(H))
         return np.mean(R ** 2)
+    
+    def cv(self, Y, cv=None):
+        if cv is None:
+            return self.loocv(Y)
+        errors = []
+        for tr, te in cv.split(self.K):
+            coef = self._solve(*self._prep_fit(self.K[np.ix_(tr,tr)], Y[tr]))
+            Yhat = self._predict_kernel(self.K[np.ix_(te,tr)], coef)
+            errors.append(np.mean((Yhat - Y[te]) ** 2))
+        return np.mean(errors)
 
 
 class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
 
     def __init__(
-        self, kernels, alphas=None, 
-        max_alpha_coef_norm=0.01, n_alphas=10, eps=1e-8, 
-        verbose=False
+        self, kernels, alphas=None,
+        n_alphas=50, eps=1e-3, 
+        cv=None, verbose=False
     ):
-        self.kernels=kernels
-        self.verbose = verbose
-        self.max_alpha_coef_norm = max_alpha_coef_norm # ||beta||2 (or smaller) desired for max alpha
+        self.kernels = kernels
+        self.alphas = [None for k in kernels] if alphas is None else alphas
         self.n_alphas = n_alphas
-        self.eps = eps
-        self.alphas = alphas
+        self.eps = eps # largest value allowable in Yhat/sup(Y) at max regularization
+        self.cv = cv
+        self.verbose = verbose
 
-    def _pre_fit(self, X, Y):
-        if self.alphas is None:
-            self.alphas = [
-                k.alpha_grid(X, Y, self.max_alpha_coef_norm, self.n_alphas, self.eps) 
-                for k in self.kernels
-            ]
+    def _errors(self, Y, cv):
+        errors = [m.cv(Y, cv=cv) for m in self.models]
 
     def fit(self, X, Y):
-        self._pre_fit(X, Y)
-        self.cv_results = []
+        self.models = []
         for kernel, alphas in zip(self.kernels, self.alphas):
-            kernel_cv_results = []
             K = kernel(X) # compute kernel once for all alpha, huge time saver
+            if alphas is None:
+                alphas = kernel.alpha_grid(
+                    Y, K=K, 
+                    n_alphas = self.n_alphas, 
+                    eps = self.eps
+                ) 
             for alpha in alphas:
                 m = KernelRidge(kernel=kernel, alpha=alpha, verbose=self.verbose)
                 m.fit(X,Y, K=K)
-                kernel_cv_results += [(m, m.loocv(Y))]
+                self.models.append(m)
 
-            fits, errors = zip(*kernel_cv_results)
-            best_index = np.argmin(errors)
-            if best_index == 0 and errors[0]/errors[1] < 0.95:
-                print(f"Warning: selected regularization is the largest grid value for {kernel}")
-            if best_index == len(fits)-1 and errors[-1]/errors[-2] < 0.95:
-                print(f"Warning: selected regularization is the smallest grid value for {kernel}")
-            self.cv_results += kernel_cv_results
-
-        fits, errors = zip(*self.cv_results)
-        best_index = np.argmin(errors)
-        self.best = fits[best_index]
+        errors = self._errors(Y, cv=self.cv)
+        self.best = self.models[np.argmin(errors)]
 
     def predict(self, X):
         return self.best.predict(X)
@@ -155,3 +157,7 @@ class MixedSobolevRidgeCV(Pipeline):
         if hasattr(self.named_steps['learner'], name):
             return getattr(self.named_steps['learner'], name)
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    @property
+    def scaler(self):
+        return self.__dict__['steps'][0][1]
