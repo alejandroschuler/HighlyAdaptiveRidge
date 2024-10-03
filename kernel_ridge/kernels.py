@@ -49,25 +49,7 @@ class RadialBasis(Kernel):
                 if equal:
                     K[tr, te] = element
         return K
-            
-    def alpha_grid(self, X, Y, max_alpha_coef_norm, n_alphas, eps):
-        """
-        Computes ||H^T Y|| using a low-dim approximate feature map
-        see: https://en.wikipedia.org/wiki/Radial_basis_function_kernel#Approximations
-        """
-        d_ = 40
-        n, d = X.shape
         
-        # create an approximate feature map
-        W = np.random.normal(0, 1/np.sqrt(2*self.gamma), size=(d, d_))
-        WX =  X @ W
-        cos_WX = np.cos(WX)  
-        sin_WX = np.sin(WX) 
-        H = np.hstack((cos_WX, sin_WX)) / np.sqrt(d_)  
-
-        alpha_max = np.linalg.norm(H.T @ Y)  / (max_alpha_coef_norm * np.max(np.abs(Y)))
-        return self.alpha_grid_from_max(alpha_max, n_alphas, eps)
-
 
 @dataclass
 class HighlyAdaptiveRidge(Kernel):
