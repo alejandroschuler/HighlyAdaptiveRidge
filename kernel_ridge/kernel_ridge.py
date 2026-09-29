@@ -92,8 +92,8 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
 
     def __init__(
         self, kernels, alphas=None,
-        n_alphas=50, eps=1e-3, 
-        cv=None, verbose=False
+        n_alphas=50, eps=1e-3,
+        cv=None, verbose=False, method='eig'
     ):
         self.kernels = kernels
         self.alphas = [None for k in kernels] if alphas is None else alphas
@@ -101,20 +101,35 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
         self.eps = eps # largest value allowable in Yhat/sup(Y) at max regularization
         self.cv = cv
         self.verbose = verbose
+        # 'eig': single-eigendecomposition LOOCV (fast, numerically identical to 'brute'
+        #        for leave-one-out). 'brute': original per-alpha bordered solve.
+        self.method = method
 
     def _errors(self, Y, cv):
-        errors = [m.cv(Y, cv=cv) for m in self.models]
+        return [m.cv(Y, cv=cv) for m in self.models]
 
     def fit(self, X, Y):
+        # The eig path reproduces the bordered-system LOOCV exactly and is far faster,
+        # but only covers cv=None (leave-one-out), which every paper experiment uses.
+        # Any explicit cv (k-fold), or an eig path that cannot select a model (a kernel so
+        # ill-conditioned that every alpha's LOOCV is non-finite), falls back to the
+        # original per-alpha solve.
+        if self.method == 'eig' and self.cv is None:
+            self._fit_eig(X, Y)
+            if self.best is not None:
+                return self
+        return self._fit_brute(X, Y)
+
+    def _fit_brute(self, X, Y):
         self.models = []
         for kernel, alphas in zip(self.kernels, self.alphas):
             K = kernel(X) # compute kernel once for all alpha, huge time saver
             if alphas is None:
                 alphas = kernel.alpha_grid(
-                    Y, K=K, 
-                    n_alphas = self.n_alphas, 
+                    Y, K=K,
+                    n_alphas = self.n_alphas,
                     eps = self.eps
-                ) 
+                )
             for alpha in alphas:
                 m = KernelRidge(kernel=kernel, alpha=alpha, verbose=self.verbose)
                 m.fit(X,Y, K=K)
@@ -122,6 +137,38 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
 
         errors = self._errors(Y, cv=self.cv)
         self.best = self.models[np.argmin(errors)]
+        return self
+
+    def _fit_eig(self, X, Y):
+        from .fast import loocv_path, coef_at
+        best_mse = np.inf
+        self.best = None
+        for kernel, alphas in zip(self.kernels, self.alphas):
+            K = kernel(X) # compute kernel once for all alpha, huge time saver
+            if alphas is None:
+                alphas = kernel.alpha_grid(
+                    Y, K=K,
+                    n_alphas=self.n_alphas,
+                    eps=self.eps,
+                )
+            alphas = np.asarray(alphas, dtype=float)
+            try:
+                mses, cache = loocv_path(K, Y, alphas)
+            except np.linalg.LinAlgError:
+                continue  # eigendecomposition failed for this kernel; let brute handle it
+            finite = np.isfinite(mses)
+            if not finite.any():
+                continue  # every alpha non-finite (ill-conditioned); fall back to brute
+            idx = np.flatnonzero(finite)
+            j = int(idx[np.argmin(mses[idx])])
+            if mses[j] < best_mse:
+                best_mse = mses[j]
+                m = KernelRidge(kernel=kernel, alpha=float(alphas[j]), verbose=self.verbose)
+                m.X = X
+                m.K = K
+                m.coef = coef_at(cache, float(alphas[j]))
+                self.best = m
+        return self
 
     def predict(self, X):
         return self.best.predict(X)

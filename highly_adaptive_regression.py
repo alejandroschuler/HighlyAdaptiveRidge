@@ -65,8 +65,27 @@ class HighlyAdaptiveBaseCV:
 
 class HighlyAdaptiveLassoCV(HighlyAdaptiveBaseCV):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, sparse=False, **kwargs):
+        # `sparse` stores the (2^p-1)*n-column basis as a CSC matrix before handing it to
+        # LassoCV. The lasso solution is unchanged; this just avoids the dense memory blowup
+        # for higher-dimensional datasets. `n_jobs` (in kwargs) parallelizes the CV folds.
+        self.sparse = sparse
         self.regression = LassoCV(*args, **kwargs)
+
+    def _design(self, X):
+        B = self._bases(X)
+        if self.sparse:
+            from scipy.sparse import csc_matrix
+            B = csc_matrix(B)
+        return B
+
+    def fit(self, X, Y):
+        self._pre_fit(X, Y)
+        self.knots = X
+        self.regression.fit(self._design(X), Y)
+
+    def predict(self, X):
+        return self.regression.predict(self._design(X))
 
 
 class HighlyAdaptiveRidgeCV(HighlyAdaptiveBaseCV, kHARCV):
