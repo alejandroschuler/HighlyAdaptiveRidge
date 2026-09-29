@@ -1,0 +1,7 @@
+#!/bin/sh
+# Tracked in .githooks and wired up with core.hooksPath, so it survives a clone.
+# A hook that only exists on one machine is a hook that silently is not running.
+set -e
+echo "artefacts: checking invariants before push"
+python3 tools/check_artefacts.py
+python3 tools/artefact_status.py --check

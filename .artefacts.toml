@@ -1,0 +1,20 @@
+# Marker for the reproducible-paper-artefacts tooling. Its presence is how the
+# tools, and Claude, know this project follows these rules.
+
+[project]
+paper_dir = "paper"
+main_branch = "main"
+main_tex = "paper/main.tex"
+
+[tiers]
+scratch = "scratch"
+notes = "paper/notes/artefacts"
+paper = "paper/artefacts"
+
+[guard]
+max_file_mb = 20
+
+[methods]
+# false: a methods setting that changed after the last review of the methods
+# text is a warning in `make check` and `make push-paper`. true: it fails them.
+strict = false
