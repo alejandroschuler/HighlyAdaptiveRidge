@@ -4,7 +4,8 @@ from .timer import Timer
 from . import kernels
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.pipeline import Pipeline
-from sklearn.model_selection import KFold
+from sklearn.model_selection import GridSearchCV, KFold
+from sklearn.linear_model import Ridge
 
 class KernelRidge(BaseEstimator, RegressorMixin):
 
@@ -208,3 +209,50 @@ class MixedSobolevRidgeCV(Pipeline):
     @property
     def scaler(self):
         return self.__dict__['steps'][0][1]
+
+
+def ridge_alpha_grid(X, Y, n_alphas=50, eps=1e-3):
+    """The regularization grid of the paper's appendix D, for ridge regression.
+
+    Ridge does not penalize its intercept, so it solves the ridge problem of
+    the centered covariates and the centered outcome, which is kernel ridge
+    with the linear kernel of the centered covariates and no intercept. The
+    bound of appendix D is for that problem, so the grid comes from it: at the
+    largest value, every fitted value is within eps max|Y - mean(Y)| of mean(Y).
+    """
+    Xc = X - X.mean(axis=0)
+    Yc = Y - Y.mean()
+    linear = kernels.Linear()
+    return linear.alpha_grid(Yc, n_alphas=n_alphas, eps=eps, K=linear(Xc))
+
+
+class RidgeRegressionCV(BaseEstimator, RegressorMixin):
+    """Ridge regression with its penalty chosen by cv-fold cross-validation
+    over the grid of the paper's appendix D.
+
+    The penalty alpha is the lambda of ||Y - X beta - b||^2 + lambda ||beta||^2,
+    where the intercept b is not penalized. scikit-learn's Ridge uses this
+    scale, so its alpha is the same parameter as the alpha of KernelRidge with
+    the linear kernel.
+
+    The grid reaches alpha = 1e-8, where X'X can be ill-conditioned (naval has
+    constant columns, for example). The default Cholesky solve then loses
+    accuracy, so the fits use the SVD solve, which is exact for every alpha.
+    """
+
+    def __init__(self, n_alphas=50, eps=1e-3, cv=5):
+        self.n_alphas = n_alphas
+        self.eps = eps
+        self.cv = cv
+
+    def fit(self, X, Y):
+        self.alphas_ = ridge_alpha_grid(X, Y, n_alphas=self.n_alphas, eps=self.eps)
+        self.search_ = GridSearchCV(
+            Ridge(solver="svd"), {"alpha": self.alphas_}, cv=self.cv,
+            scoring="neg_mean_squared_error",
+        ).fit(X, Y)
+        self.alpha_ = self.search_.best_params_["alpha"]
+        return self
+
+    def predict(self, X):
+        return self.search_.predict(X)

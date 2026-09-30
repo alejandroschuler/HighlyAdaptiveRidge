@@ -1,6 +1,5 @@
 """The learners of the simulations, with the paper's settings."""
 from sklearn.ensemble import HistGradientBoostingRegressor, RandomForestRegressor
-from sklearn.linear_model import Ridge
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.neural_network import MLPRegressor
 from sklearn.pipeline import make_pipeline
@@ -11,20 +10,21 @@ from kernel_ridge import (
     HighlyAdaptiveRidgeCV,
     MixedSobolevRidgeCV,
     RadialBasisKernelRidgeCV,
+    RidgeRegressionCV,
 )
 
 N_ALPHAS = 50
 GAMMAS = [0.001, 0.01, 0.1, 1, 10]
 RF_TREES = 2000
-RIDGE_ALPHA = 1e-3
 
 
 def demo_learners(rep, n_jobs=-1):
-    """The six methods of Figure 1. The regularization searches keep the
-    values of the original notebook: eps = 1e-10 for HAR and radial basis KRR,
-    and 1e-6 for mixed Sobolev KRR."""
+    """The six methods of Figure 1. The regularization searches of the kernel
+    methods keep the values of the original notebook: eps = 1e-10 for HAR and
+    radial basis KRR, and 1e-6 for mixed Sobolev KRR. Ridge uses the Table 1
+    search."""
     return {
-        "Ridge Regression": Ridge(alpha=RIDGE_ALPHA),
+        "Ridge Regression": RidgeRegressionCV(n_alphas=N_ALPHAS, cv=5),
         "Random Forest": RandomForestRegressor(
             n_estimators=RF_TREES, n_jobs=n_jobs, random_state=rep
         ),

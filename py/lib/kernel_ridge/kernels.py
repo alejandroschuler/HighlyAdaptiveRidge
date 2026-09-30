@@ -22,6 +22,20 @@ class Kernel:
 
 
 @dataclass
+class Linear(Kernel):
+    """K(x, x') = x'x. Kernel ridge regression with this kernel is ridge regression."""
+
+    def __call__(self, X, X_test=None):
+        if X_test is None:
+            return self.kernel(X, X, equal=True)
+        return self.kernel(X_test, X, equal=False)
+
+    @staticmethod
+    def kernel(X_test, X, equal):
+        return X_test @ X.T
+
+
+@dataclass
 class RadialBasis(Kernel):
     gamma: float = 1
 
