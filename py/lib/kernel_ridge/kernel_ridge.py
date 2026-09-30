@@ -176,8 +176,8 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
 
 
 class HighlyAdaptiveRidgeCV(KernelRidgeCV):
-    def __init__(self, depth=np.inf, order=0, **kwargs):
-        super().__init__(kernels=[kernels.HighlyAdaptiveRidge(depth=depth, order=order)], **kwargs)
+    def __init__(self, depth=np.inf, order=0, decay=1.0, weights=None, **kwargs):
+        super().__init__(kernels=[kernels.HighlyAdaptiveRidge(depth=depth, order=order, decay=decay, weights=weights)], **kwargs)
 
 
 class RadialBasisKernelRidgeCV(KernelRidgeCV):
