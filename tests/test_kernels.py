@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from highly_adaptive_regression import HighlyAdaptiveRidgeCV as HARCV
+from basis_har import HighlyAdaptiveRidgeCV as HARCV
 from kernel_ridge import HighlyAdaptiveRidgeCV as kHARCV, KernelRidge
 from kernel_ridge import kernels
 

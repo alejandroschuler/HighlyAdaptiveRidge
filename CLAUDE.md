@@ -97,3 +97,28 @@ The `reproducible-paper-artefacts` skill has the procedures: making an
 artefact, recording methods settings, the methods audit, promotion, and one
 repair for each state. Load it when a task needs more than these rules.
 <!-- /reproducible-paper-artefacts -->
+
+## This project
+
+- The environment is `.venv`, which `uv sync` builds from `pyproject.toml` and
+  `uv.lock`. The Makefile runs Snakemake and pytest from it. Run a scratch
+  script with `PYTHONPATH=py/lib .venv/bin/python scratch/<script>.py`.
+- `data/uci` is a link to `../../csv`, the UCI files that other projects share.
+  See `data/README.md`.
+- Table 1 is expensive. Its 55 fast cells take about two hours, and its 20 HAL
+  cells take about two days, with hours per cell on boston and concrete. The
+  Table 1 rules declare single files of `py/lib/table1/`, so that an edit
+  reruns only the cells that read it. Keep it that way.
+- `make test` has one known failure, `test_LOOCV_for_HAR_vs_kernel_HAR[data9]`,
+  a degenerate case (n = 3, d = 16, pure noise).
+- `results/legacy/` holds the output from before the pipeline: the 2024
+  notebook runs and the seeded reproduction of June 2026, with its
+  `VERIFICATION.md`. No rule reads it.
+- `reviews/` holds the confidential referee reports. It is ignored here, and
+  nothing from it goes into a commit or a push.
+- Until the user decides otherwise, the paper keeps its hand-placed figures,
+  `paper/fits.pdf` and `paper/convergence.pdf`, and its hand-typed Table 1.
+  All three came from the 2024 notebooks in `legacy/`. The Snakefile builds
+  their replacements, which the paper does not use yet.
+- The `upstream` remote (Alex Hagemeister's fork) has a separate refactor from
+  March 2026 that this history does not include.

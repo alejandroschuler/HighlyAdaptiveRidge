@@ -1,6 +1,6 @@
 import numpy as np
 from sklearn.base import BaseEstimator, RegressorMixin
-from timer import Timer
+from .timer import Timer
 from . import kernels
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.pipeline import Pipeline

@@ -1,6 +1,4 @@
-from sklearn.linear_model import LassoCV, RidgeCV
-from kernel_ridge import HighlyAdaptiveRidgeCV as kHARCV
-from kernel_ridge.kernels import HighlyAdaptiveRidge as HARKernel
+from sklearn.linear_model import LassoCV
 import numpy as np
 
 
@@ -86,16 +84,3 @@ class HighlyAdaptiveLassoCV(HighlyAdaptiveBaseCV):
 
     def predict(self, X):
         return self.regression.predict(self._design(X))
-
-
-class HighlyAdaptiveRidgeCV(HighlyAdaptiveBaseCV, kHARCV):
-
-    # TODO: FIX HOW ALPHAS ARE ASSIGNED, 
-
-    def __init__(self, *args, **kwargs):
-        kHARCV.__init__(self, *args, **kwargs) # copy the init signature of kHARCV to get alpha grid params
-        self.regression = RidgeCV()
-
-    def _pre_fit(self, X,Y):
-        K = HARKernel()
-        self.regression.alphas = HARKernel.alpha_grid(X, Y, self.n_alphas, self.eps, K=K(X))  

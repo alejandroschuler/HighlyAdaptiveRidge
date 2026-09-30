@@ -19,11 +19,27 @@
 #   make push-paper          check, push the code, then push the paper
 #   make package             ARTEFACTS.md for a replication package
 #   make dag                 the artefact dependency graph
+#   make test                the unit tests of the methods
 #
 # Scratch work has no target. Put the script and its output under scratch/ and
 # run it directly. Nothing there is stamped or committed.
 
 SHELL := /bin/bash
+
+# The pipeline runs in the project environment, .venv, which `uv sync` builds
+# from pyproject.toml and uv.lock. Its bin/ comes first on PATH, so `snakemake`
+# here and in the checkers is the pinned one, and every Python rule runs under
+# an interpreter that has the pinned packages. The stamp reruns `uv sync` when
+# the lock file changes.
+VENV := .venv
+ENV_STAMP := $(VENV)/.synced
+export PATH := $(CURDIR)/$(VENV)/bin:$(PATH)
+# GNU Make 3.81, the version macOS ships, looks up a recipe's command on the
+# PATH it started with, so the recipes name these two by path. The export above
+# still reaches the checkers, which call snakemake themselves.
+SNAKEMAKE := $(VENV)/bin/snakemake
+PYTEST := $(VENV)/bin/pytest
+
 PY ?= python3
 TOOLS := tools
 CORES ?= 4
@@ -46,7 +62,7 @@ GENERATED := artefacts notes/artefacts artefacts.sty .gitignore
 # --config as key=value pairs, so a trailing target name is swallowed as a
 # malformed config entry.
 
-.PHONY: help wip notes build pdf status check methods methods-ok deps package dag pull-paper push-paper
+.PHONY: help wip notes build pdf status check methods methods-ok deps package dag test pull-paper push-paper
 
 help:
 	@sed -n 's/^#   //p' $(MAKEFILE_LIST)
@@ -67,13 +83,20 @@ wip:
 # Building
 # --------------------------------------------------------------------------
 
-notes:
-	@$(PY) $(TOOLS)/build_guard.py --tier notes
-	@snakemake notes --cores $(CORES) --keep-going --config tier=notes
+$(ENV_STAMP): pyproject.toml uv.lock
+	@uv sync --quiet
+	@touch $@
 
-build:
+notes: $(ENV_STAMP)
+	@$(PY) $(TOOLS)/build_guard.py --tier notes
+	@$(SNAKEMAKE) notes --cores $(CORES) --keep-going --config tier=notes
+
+build: $(ENV_STAMP)
 	@$(PY) $(TOOLS)/build_guard.py --tier paper
-	@snakemake --cores $(CORES) --config tier=paper
+	@$(SNAKEMAKE) --cores $(CORES) --config tier=paper
+
+test: $(ENV_STAMP)
+	@$(PYTEST) -q
 
 # -cd matters. Without it latexmk stays in the current directory, cannot find
 # artefacts.sty, and writes main.aux and friends into the code repo.
@@ -113,7 +136,7 @@ package:
 	@$(PY) $(TOOLS)/artefact_status.py --write-report
 
 dag:
-	@snakemake --filegraph all notes | dot -Tpdf > artefact-dag.pdf
+	@$(SNAKEMAKE) --filegraph all notes | dot -Tpdf > artefact-dag.pdf
 	@echo "wrote artefact-dag.pdf"
 
 # --------------------------------------------------------------------------

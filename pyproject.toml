@@ -1,0 +1,33 @@
+[project]
+name = "highly-adaptive-ridge"
+version = "0.1.0"
+description = "Highly adaptive ridge regression, and the pipeline behind the paper"
+requires-python = "==3.12.*"
+# The numerical stack is pinned to the versions that produced the June 2026
+# reproduction (results/legacy/2026-06-repro), so reruns give the same numbers.
+# Snakemake is here too: the pipeline runs each Python rule under Snakemake's
+# own interpreter, so that interpreter has to have these packages.
+dependencies = [
+    "joblib==1.4.2",
+    "llvmlite==0.43.0",
+    "matplotlib==3.11.0",
+    "numba==0.60.0",
+    "numpy==2.0.1",
+    "pandas==2.2.2",
+    "scikit-learn==1.5.1",
+    "scipy==1.14.1",
+    "snakemake==9.27.0",
+    "threadpoolctl==3.5.0",
+]
+
+[dependency-groups]
+dev = ["pytest==8.3.2"]
+
+[tool.uv]
+# The code is not installed as a package. The Snakefile and pytest put py/lib
+# on the path.
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["py/lib"]
+testpaths = ["tests"]

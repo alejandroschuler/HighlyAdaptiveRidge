@@ -14,25 +14,25 @@ NOTES = "paper/notes/artefacts"
 # script under its own interpreter and puts only the script's folder on
 # sys.path, so the helper folder goes on PYTHONPATH here, where `make` and a
 # bare `snakemake` both pass. That interpreter is also where a Python rule's
-# packages must be installed (for a uv install of Snakemake:
-# `uv tool install snakemake --with pandas`), unless the rule has a `conda:`
-# environment.
+# packages must be installed. Here it is the project environment, .venv, which
+# `uv sync` builds from pyproject.toml and uv.lock, and the Makefile runs the
+# Snakemake installed there.
 os.environ["PYTHONPATH"] = os.pathsep.join(
     p for p in (str(Path("py/lib").resolve()), os.environ.get("PYTHONPATH")) if p
 )
 
-# The registry: every artefact the manuscript uses. Empty to start, so a first
-# `make build` succeeds with nothing to do. A name here without a rule below
-# fails at once with MissingRuleException, so this list is safe to treat as the
-# registry.
+# The registry: every artefact the manuscript uses. A name here without a rule
+# below fails at once with MissingRuleException, so this list is safe to treat
+# as the registry.
 NUMBERS: list[str] = []
-FIGURES: list[str] = []
-TABLES: list[str] = []
+FIGURES = ["fits", "convergence"]      # Figures 1 and 2
+TABLES = ["empirical"]                 # Table 1
 
 # Exploratory output. Deliberately not part of `rule all`: a manuscript build
-# should not drag along months of abandoned exploration.
+# should not drag along months of abandoned exploration. These two are the
+# experiments the referee asked for (comment 7 of the first report).
 NOTES_NUMBERS: list[str] = []
-NOTES_FIGURES: list[str] = []
+NOTES_FIGURES = ["noise-sweep", "dimension-sweep"]
 NOTES_TABLES: list[str] = []
 
 
@@ -79,9 +79,51 @@ def lib(*dirs):
     return sorted(out)
 
 
-EST = lib("R/lib/estimate", "R/lib/artefacts.R")
-PLOT = lib("R/lib/plot", "R/lib/artefacts.R")
-SIM = lib("py/lib/sim", "py/lib/artefacts.py")
+# Helper code, by topic. Each rule declares what its script imports, and the
+# Table 1 rules declare single files, because the HAL cells take hours and
+# should not rerun after an edit they do not read.
+KRR = lib("py/lib/kernel_ridge")                        # HAR and the other kernel ridge methods
+HAL = lib("py/lib/highly_adaptive_regression.py")       # HAL
+T1 = "py/lib/table1"
+TABLE1_CELL = lib(f"{T1}/__init__.py", f"{T1}/design.py", f"{T1}/data.py", f"{T1}/cell.py")
+SIM = lib("py/lib/sim") + KRR + HAL                     # the simulations; cheap, so declared broadly
+DISPLAY = lib("py/lib/display", "py/lib/artefacts.py")  # summaries, figures and tables
+
+
+# ---------------------------------------------------------------------------
+# The design: which cells exist. The settings inside a cell (seeds, splits,
+# learners) are in py/lib, where a change reruns the cells that read them.
+
+DATA = "data/uci"   # the UCI csv files; data/README.md says where they come from
+
+# Table 1, with the datasets in the order of the paper's rows.
+TABLE1_DATASETS = [
+    "power", "yacht", "concrete", "energy", "kin8nm", "protein",
+    "wine", "boston", "naval", "yearmsd", "slice",
+]
+TABLE1_HAL_DATASETS = ["yacht", "energy", "boston", "concrete"]
+TABLE1_REPS = list(range(5))
+TABLE1_METHODS = [
+    "HAR", "HAL", "Mixed Sobolev KRR", "Radial Basis KRR", "Random Forest",
+    "Ridge Regression",
+]
+
+# Figure 2 and the noise sweep are one simulation over (sigma, n).
+CONVERGENCE_N = [50, 125, 200, 300, 400, 600]
+CONVERGENCE_SIGMA = ["0.1"]            # Figure 2
+NOISE_SIGMA = ["0.1", "0.5", "1.0"]    # the noise sweep
+
+# The dimension sweep.
+DIMENSION_DGPS = ["interaction", "additive"]
+DIMENSION_P = [5, 8, 10, 15, 20, 30]
+
+wildcard_constraints:
+    dataset=r"[a-z0-9]+",
+    rep=r"\d+",
+    sigma=r"[0-9.]+",
+    n=r"\d+",
+    dgp=r"[a-z]+",
+    p=r"\d+",
 
 
 onstart:
@@ -142,40 +184,116 @@ rule artefacts_tex:
 
 
 # ---------------------------------------------------------------------------
-# A worked example, commented out. Uncomment, adjust the paths, and add the
-# artefact names to the lists at the top.
-#
-# The shape that matters is the two-layer split. Everything expensive writes a
-# results file, and the figures, tables and numbers depend on that file plus
-# the presentation helpers. Without the split, fixing a typo in a plotting
-# comment re-runs the Monte Carlo, and a pipeline that charges an hour for a
-# cosmetic change is one people stop using.
-#
-# Add `conda: "envs/py.yaml"` to a rule once you have an environment file, so
-# that a dependency bump marks the affected artefacts stale.
-#
-# rule simulate_primary:                      # expensive: runs once
-#     input:
-#         dgp="config/dgp.yaml",
-#         helpers=SIM,
-#     output:
-#         "results/sim-primary.parquet",
-#     threads: 8
-#     script: "py/simulate_primary.py"
-#
-# rule fig_primary:                           # cheap: re-renders in seconds
-#     input:
-#         results="results/sim-primary.parquet",
-#         helpers=PLOT,
-#     output:
-#         f"{ART}/figures/fig-primary.pdf",
-#     script: "R/fig_primary.R"
-#
-# rule fit_primary:
-#     input:
-#         data="data/analysis.rds",
-#         helpers=EST,
-#     output:
-#         fit="results/fit-primary.rds",
-#         numbers=f"{ART}/numbers/primary-fit.tex",
-#     script: "R/fit_primary.R"
+# Table 1 (tab:empirical): the test RMSE of six methods on eleven UCI datasets.
+# The cells write results/, and the table reads them, so a change to the
+# table's format reruns no fit. Each cell job takes every core it is given.
+
+rule table1_cell:                  # expensive: about two hours for all 55 cells
+    input:
+        data=f"{DATA}/{{dataset}}.csv",
+        helpers=KRR + TABLE1_CELL + lib(f"{T1}/learners.py"),
+    output:
+        "results/table1/{dataset}/rep{rep}.csv",
+    threads: workflow.cores
+    script: "py/table1_cell.py"
+
+
+rule table1_hal_cell:              # very expensive: hours per cell on boston and concrete
+    input:
+        data=f"{DATA}/{{dataset}}.csv",
+        helpers=HAL + TABLE1_CELL + lib(f"{T1}/hal.py"),
+    output:
+        "results/table1/{dataset}/rep{rep}-hal.csv",
+    threads: workflow.cores
+    script: "py/table1_hal_cell.py"
+
+
+rule table_empirical:
+    input:
+        cells=expand("results/table1/{dataset}/rep{rep}.csv",
+                     dataset=TABLE1_DATASETS, rep=TABLE1_REPS),
+        hal=expand("results/table1/{dataset}/rep{rep}-hal.csv",
+                   dataset=TABLE1_HAL_DATASETS, rep=TABLE1_REPS),
+        helpers=DISPLAY,
+    output:
+        f"{ART}/tables/empirical.tex",
+    params:
+        datasets=TABLE1_DATASETS,
+        methods=TABLE1_METHODS,
+    script: "py/table_empirical.py"
+
+
+# ---------------------------------------------------------------------------
+# Figure 1 (fig:fits): the fits of six methods on one-dimensional data.
+
+rule sim_fits:
+    input:
+        helpers=SIM,
+    output:
+        "results/fits/predictions.csv",
+    threads: workflow.cores
+    script: "py/sim_fits.py"
+
+
+rule fig_fits:
+    input:
+        predictions="results/fits/predictions.csv",
+        helpers=DISPLAY,
+    output:
+        f"{ART}/figures/fits.pdf",
+    script: "py/fig_fits.py"
+
+
+# ---------------------------------------------------------------------------
+# Figure 2 (fig:convergence) and the noise sweep share one simulation, whose
+# cells are (sigma, n). Figure 2 reads the cells at sigma = 0.1.
+
+rule sim_convergence:
+    input:
+        helpers=SIM,
+    output:
+        "results/convergence/sigma{sigma}/n{n}.csv",
+    threads: workflow.cores
+    script: "py/sim_convergence.py"
+
+
+rule fig_convergence:
+    input:
+        cells=expand("results/convergence/sigma{sigma}/n{n}.csv",
+                     sigma=CONVERGENCE_SIGMA, n=CONVERGENCE_N),
+        helpers=DISPLAY,
+    output:
+        f"{ART}/figures/convergence.pdf",
+    script: "py/fig_convergence.py"
+
+
+rule fig_noise_sweep:
+    input:
+        cells=expand("results/convergence/sigma{sigma}/n{n}.csv",
+                     sigma=NOISE_SIGMA, n=CONVERGENCE_N),
+        helpers=DISPLAY,
+    output:
+        f"{NOTES}/figures/noise-sweep.pdf",
+    script: "py/fig_noise_sweep.py"
+
+
+# ---------------------------------------------------------------------------
+# The dimension sweep: HAR and mixed Sobolev KRR against the other methods the
+# referee asked for, on two DGPs, as the number of covariates grows.
+
+rule sim_dimension:
+    input:
+        helpers=SIM,
+    output:
+        "results/dimension/{dgp}/p{p}.csv",
+    threads: workflow.cores
+    script: "py/sim_dimension.py"
+
+
+rule fig_dimension_sweep:
+    input:
+        cells=expand("results/dimension/{dgp}/p{p}.csv", dgp=DIMENSION_DGPS, p=DIMENSION_P),
+        helpers=DISPLAY,
+    output:
+        f"{NOTES}/figures/dimension-sweep.pdf",
+    script: "py/fig_dimension_sweep.py"
