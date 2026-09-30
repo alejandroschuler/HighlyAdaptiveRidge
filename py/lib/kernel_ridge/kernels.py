@@ -12,13 +12,16 @@ from numpy.linalg import norm, eigvalsh
 
 class Kernel:
 
-    def alpha_grid(self, Y, n_alphas, eps, alpha_min=1e-8, K=None, X=None):
+    def alpha_grid(self, Y, n_alphas, eps, alpha_min=1e-8, K=None, X=None, min_eig=None):
         """
-        see HAR paper appendix D
+        see HAR paper appendix D. min_eig is the smallest eigenvalue of K, if it is
+        already known; otherwise it is computed.
         """
         if K is None:
             K = self.kernel(X, X, equal=True)
-        alpha_max = norm(Y) * np.max(norm(K, axis=1)) / (eps * np.max(np.abs(Y))) - np.min(eigvalsh(K))
+        if min_eig is None:
+            min_eig = np.min(eigvalsh(K))
+        alpha_max = norm(Y) * np.max(norm(K, axis=1)) / (eps * np.max(np.abs(Y))) - min_eig
         return np.geomspace(alpha_min, alpha_max, num=n_alphas)
 
 
@@ -86,6 +89,10 @@ class HighlyAdaptiveRidge(Kernel):
         decay: multiplies w_k by decay**k. decay = 1 changes nothing.
         depth: sets w_k = 0 for every k > depth. A negative or infinite depth
             keeps every section.
+
+    For order 0 the kernel first packs the comparisons X_knot <= x into bits,
+    64 coordinates to a word. The bits take n * (n + n_test) * ceil(p / 64) * 8
+    bytes, for example 192 MB for n = 2000 and p = 384.
     """
     depth: int = -1
     order: int = 0
@@ -123,7 +130,9 @@ class HighlyAdaptiveRidge(Kernel):
         X_test = np.ascontiguousarray(X_test, dtype=np.float64)
         w = self.section_weights(X.shape[1])
         if self.order == 0:
-            K = _har_kernel_order0(X, X_test, _size_table(w), equal)
+            B = _pack_bits(X, X)
+            B_test = B if equal else _pack_bits(X, X_test)
+            K = _har_kernel_order0(B, B_test, _size_table(w), equal)
         else:
             fact_sq = np.array([float(math.factorial(k)) ** 2 for k in range(self.order + 1)])
             scale, rate = _geometric(w)
@@ -171,10 +180,48 @@ def _geometric(w):
     return 0.0, 0.0
 
 
+# uint64 constants only: numba promotes a mix of uint64 and int64 to float64.
+_M1 = np.uint64(0x5555555555555555)
+_M2 = np.uint64(0x3333333333333333)
+_M4 = np.uint64(0x0F0F0F0F0F0F0F0F)
+_H01 = np.uint64(0x0101010101010101)
+_S1, _S2, _S4, _S56 = np.uint64(1), np.uint64(2), np.uint64(4), np.uint64(56)
+
+
+@njit(inline="always")
+def _popcount64(x):
+    """The number of 1 bits in a uint64."""
+    x = x - ((x >> _S1) & _M1)
+    x = (x & _M2) + ((x >> _S2) & _M2)
+    x = (x + (x >> _S4)) & _M4
+    return np.int64((x * _H01) >> _S56)
+
+
 @njit(parallel=True)
-def _har_kernel_order0(X, X_test, table, equal):
-    n, d = X.shape
-    n_test = X_test.shape[0]
+def _pack_bits(X, P):
+    """B[a, i] holds the bits 1(X[i, j] <= P[a, j]) for j = 0, ..., p - 1.
+
+    Bit j % 64 of word j // 64. The rows of X are the knots.
+    """
+    n, p = X.shape
+    m = P.shape[0]
+    W = (p + 63) // 64
+    B = np.zeros((m, n, W), dtype=np.uint64)
+    for a in prange(m):
+        for i in range(n):
+            for j in range(p):
+                if X[i, j] <= P[a, j]:
+                    B[a, i, j // 64] |= np.uint64(1) << np.uint64(j % 64)
+    return B
+
+
+@njit(parallel=True)
+def _har_kernel_order0(B, B_test, table, equal):
+    """A knot is below both points in c coordinates, the popcount of the AND of
+    their bits, and adds table[c] to the kernel. The knots are summed in order.
+    """
+    n, _, W = B.shape
+    n_test = B_test.shape[0]
     K = np.empty((n_test, n), dtype=np.float64)
     for tr in prange(n):
         max_index = tr + 1 if equal else n_test
@@ -182,9 +229,8 @@ def _har_kernel_order0(X, X_test, table, equal):
             sum_val = 0.0
             for knot in range(n):
                 c = 0
-                for j in range(d):
-                    if X[knot, j] <= X[tr, j] and X[knot, j] <= X_test[te, j]:
-                        c += 1
+                for w in range(W):
+                    c += _popcount64(B[tr, knot, w] & B_test[te, knot, w])
                 sum_val += table[c]
             K[te, tr] = sum_val
             if equal:

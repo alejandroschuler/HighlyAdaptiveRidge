@@ -4,8 +4,10 @@ import math
 
 import numpy as np
 import pytest
+from sklearn.model_selection import KFold
 
 from kernel_ridge import HighlyAdaptiveRidgeCV
+from kernel_ridge.fast import _prep
 from kernel_ridge.kernels import HighlyAdaptiveRidge
 
 
@@ -125,3 +127,71 @@ def test_cv_passes_the_weights_on():
     Y = X.sum(1)
     har = HighlyAdaptiveRidgeCV(decay=0.5, depth=2, n_alphas=5).fit(X, Y)
     assert har.best.kernel == HighlyAdaptiveRidge(depth=2, decay=0.5)
+
+
+# Paths over depth or decay, with early stopping.
+
+def path_data():
+    rng = np.random.default_rng(0)
+    X = rng.random((40, 4))
+    Y = 2 * X[:, 0] * X[:, 1] * X[:, 2] + np.sin(3 * X[:, 3]) + 0.1 * rng.normal(size=40)
+    return X, Y
+
+
+# On path_data, the eig path over decays has its best kernel inside the path, at 0.3.
+paths = {"depths": dict(depths=[1, 2, 3, 4]), "decays": dict(decays=[0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0])}
+cvs = {"eig": None, "brute": KFold(3)}
+
+
+def test_paths_build_the_kernels_in_order():
+    by_depth = HighlyAdaptiveRidgeCV(decay=0.5, depths=[1, 3])
+    assert by_depth.kernels == [HighlyAdaptiveRidge(depth=1, decay=0.5), HighlyAdaptiveRidge(depth=3, decay=0.5)]
+    by_decay = HighlyAdaptiveRidgeCV(depth=2, order=1, decays=[0.1, 1.0])
+    assert by_decay.kernels == [HighlyAdaptiveRidge(depth=2, order=1, decay=0.1), HighlyAdaptiveRidge(depth=2, order=1, decay=1.0)]
+
+
+def test_depths_and_decays_together_are_an_error():
+    with pytest.raises(ValueError, match="not both"):
+        HighlyAdaptiveRidgeCV(depths=[1, 2], decays=[0.1, 1.0])
+
+
+@pytest.mark.parametrize("patience", [0, 1.5])
+def test_bad_patience_is_an_error(patience):
+    X, Y = path_data()
+    with pytest.raises(ValueError, match="patience"):
+        HighlyAdaptiveRidgeCV(depths=[1, 2], patience=patience, n_alphas=5).fit(X, Y)
+
+
+@pytest.mark.parametrize("cv", list(cvs))
+@pytest.mark.parametrize("path", list(paths))
+def test_no_patience_evaluates_every_kernel(path, cv):
+    X, Y = path_data()
+    m = HighlyAdaptiveRidgeCV(n_alphas=10, cv=cvs[cv], **paths[path]).fit(X, Y)
+    assert len(m.kernel_mses_) == len(m.kernels)
+    assert m.best.kernel == m.kernels[int(np.argmin(m.kernel_mses_))]
+
+
+@pytest.mark.parametrize("patience", [1, 2])
+@pytest.mark.parametrize("cv", list(cvs))
+@pytest.mark.parametrize("path", list(paths))
+def test_patience_stops_after_that_many_kernels_without_a_lower_error(path, cv, patience):
+    X, Y = path_data()
+    full = HighlyAdaptiveRidgeCV(n_alphas=10, cv=cvs[cv], **paths[path]).fit(X, Y)
+    m = HighlyAdaptiveRidgeCV(n_alphas=10, cv=cvs[cv], patience=patience, **paths[path]).fit(X, Y)
+    i_best = int(np.argmin(m.kernel_mses_))
+    assert len(m.kernel_mses_) == min(len(m.kernels), i_best + patience + 1)
+    if path == "decays":
+        assert len(m.kernel_mses_) < len(m.kernels)  # it stopped early on this data
+    assert m.best.kernel == m.kernels[i_best]
+    # the kernels that it evaluated have the same errors as in the walk over every kernel
+    np.testing.assert_array_equal(m.kernel_mses_, full.kernel_mses_[: len(m.kernel_mses_)])
+
+
+def test_alpha_grid_takes_the_smallest_eigenvalue_from_the_eigendecomposition():
+    X, Y = path_data()
+    kernel = HighlyAdaptiveRidge()
+    K = kernel(X)
+    _, min_eig = _prep(K, Y)
+    np.testing.assert_allclose(
+        kernel.alpha_grid(Y, 20, 1e-3, K=K, min_eig=min_eig), kernel.alpha_grid(Y, 20, 1e-3, K=K), rtol=1e-12
+    )

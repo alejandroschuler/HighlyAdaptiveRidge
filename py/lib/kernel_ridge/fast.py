@@ -29,26 +29,34 @@ import numpy as np
 
 
 def _prep(K, Y):
-    """Rescale to unit mean-diagonal and eigendecompose. Returns a cache."""
+    """Rescale to unit mean-diagonal and eigendecompose.
+
+    Returns (cache, min_eig). The cache feeds loocv_path and coef_at. min_eig is the
+    smallest eigenvalue of K before the clamp, for Kernel.alpha_grid.
+    """
     n = K.shape[0]
     c = float(np.mean(np.diag(K)))
     if not np.isfinite(c) or c <= 0:
         c = 1.0
     lam, Q = np.linalg.eigh(K / c)      # K/c has O(1) entries -> well-conditioned
+    min_eig = float(np.min(lam)) * c
     lam = np.maximum(lam, 0.0)          # the kernel is PSD; clamp numerical negatives
     g = Q.T @ np.ones(n)
     w = Q.T @ Y
-    return lam, Q, g, w, c
+    return (lam, Q, g, w, c), min_eig
 
 
-def loocv_path(K, Y, alphas):
+def loocv_path(K, Y, alphas, cache=None):
     """LOOCV MSE for each alpha, reproducing KernelRidge.loocv exactly.
 
     Non-finite entries (very small alpha can drive a leverage to 1) are returned as inf so
     the caller selects among the finite ones, matching the original argmin-over-errors.
+    A cache from _prep(K, Y) skips the eigendecomposition.
     Returns (mses, cache); cache feeds coef_at.
     """
-    lam, Q, g, w, c = _prep(K, Y)
+    if cache is None:
+        cache, _ = _prep(K, Y)
+    lam, Q, g, w, c = cache
     Ks = K / c
     Q2 = Q * Q
     mses = np.full(len(alphas), np.inf, dtype=float)

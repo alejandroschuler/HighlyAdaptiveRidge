@@ -90,11 +90,21 @@ class KernelRidge(BaseEstimator, RegressorMixin):
 
 
 class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
+    """Kernel ridge with the kernel and alpha chosen by cross-validation.
+
+    patience: None evaluates every kernel. An integer patience >= 1 walks the
+        kernels in order, builds each one only when it gets there, and stops
+        after `patience` kernels in a row that do not lower the best CV error
+        so far. Order the kernels along a path, for example by depth.
+
+    After fit, kernel_mses_ holds the best CV error of each kernel that was
+    evaluated, in order (inf where none was finite).
+    """
 
     def __init__(
         self, kernels, alphas=None,
         n_alphas=50, eps=1e-3,
-        cv=None, verbose=False, method='eig'
+        cv=None, verbose=False, method='eig', patience=None,
     ):
         self.kernels = kernels
         self.alphas = [None for k in kernels] if alphas is None else alphas
@@ -105,11 +115,11 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
         # 'eig': single-eigendecomposition LOOCV (fast, numerically identical to 'brute'
         #        for leave-one-out). 'brute': original per-alpha bordered solve.
         self.method = method
-
-    def _errors(self, Y, cv):
-        return [m.cv(Y, cv=cv) for m in self.models]
+        self.patience = patience
 
     def fit(self, X, Y):
+        if self.patience is not None and not (isinstance(self.patience, (int, np.integer)) and self.patience >= 1):
+            raise ValueError(f"patience must be None or an integer >= 1, not {self.patience!r}")
         # The eig path reproduces the bordered-system LOOCV exactly and is far faster,
         # but only covers cv=None (leave-one-out), which every paper experiment uses.
         # Any explicit cv (k-fold), or an eig path that cannot select a model (a kernel so
@@ -121,8 +131,16 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
                 return self
         return self._fit_brute(X, Y)
 
+    def _stop(self):
+        """True when the last `patience` kernels did not lower the best CV error."""
+        if self.patience is None:
+            return False
+        return len(self.kernel_mses_) - 1 - int(np.argmin(self.kernel_mses_)) >= self.patience
+
     def _fit_brute(self, X, Y):
         self.models = []
+        self.kernel_mses_ = []
+        errors = []
         for kernel, alphas in zip(self.kernels, self.alphas):
             K = kernel(X) # compute kernel once for all alpha, huge time saver
             if alphas is None:
@@ -131,44 +149,56 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
                     n_alphas = self.n_alphas,
                     eps = self.eps
                 )
+            kernel_errors = []
             for alpha in alphas:
                 m = KernelRidge(kernel=kernel, alpha=alpha, verbose=self.verbose)
                 m.fit(X,Y, K=K)
                 self.models.append(m)
+                e = m.cv(Y, cv=self.cv)
+                kernel_errors.append(e if np.isfinite(e) else np.inf)
+            errors.extend(kernel_errors)
+            self.kernel_mses_.append(float(min(kernel_errors, default=np.inf)))
+            if self._stop():
+                break
 
-        errors = self._errors(Y, cv=self.cv)
         self.best = self.models[np.argmin(errors)]
         return self
 
     def _fit_eig(self, X, Y):
-        from .fast import loocv_path, coef_at
-        best_mse = np.inf
+        from .fast import _prep, loocv_path, coef_at
         self.best = None
+        self.kernel_mses_ = []
         for kernel, alphas in zip(self.kernels, self.alphas):
             K = kernel(X) # compute kernel once for all alpha, huge time saver
-            if alphas is None:
-                alphas = kernel.alpha_grid(
-                    Y, K=K,
-                    n_alphas=self.n_alphas,
-                    eps=self.eps,
-                )
-            alphas = np.asarray(alphas, dtype=float)
+            mse = np.inf
             try:
-                mses, cache = loocv_path(K, Y, alphas)
+                cache, min_eig = _prep(K, Y)
             except np.linalg.LinAlgError:
-                continue  # eigendecomposition failed for this kernel; let brute handle it
-            finite = np.isfinite(mses)
-            if not finite.any():
-                continue  # every alpha non-finite (ill-conditioned); fall back to brute
-            idx = np.flatnonzero(finite)
-            j = int(idx[np.argmin(mses[idx])])
-            if mses[j] < best_mse:
-                best_mse = mses[j]
-                m = KernelRidge(kernel=kernel, alpha=float(alphas[j]), verbose=self.verbose)
-                m.X = X
-                m.K = K
-                m.coef = coef_at(cache, float(alphas[j]))
-                self.best = m
+                cache = None  # eigendecomposition failed for this kernel; let brute handle it
+            if cache is not None:
+                if alphas is None:
+                    alphas = kernel.alpha_grid(
+                        Y, K=K,
+                        n_alphas=self.n_alphas,
+                        eps=self.eps,
+                        min_eig=min_eig,
+                    )
+                alphas = np.asarray(alphas, dtype=float)
+                mses, cache = loocv_path(K, Y, alphas, cache=cache)
+                finite = np.isfinite(mses)
+                if finite.any():  # else every alpha non-finite (ill-conditioned); fall back to brute
+                    idx = np.flatnonzero(finite)
+                    j = int(idx[np.argmin(mses[idx])])
+                    mse = float(mses[j])
+                    if mse < min(self.kernel_mses_, default=np.inf):
+                        m = KernelRidge(kernel=kernel, alpha=float(alphas[j]), verbose=self.verbose)
+                        m.X = X
+                        m.K = K
+                        m.coef = coef_at(cache, float(alphas[j]))
+                        self.best = m
+            self.kernel_mses_.append(mse)
+            if self._stop():
+                break
         return self
 
     def predict(self, X):
@@ -176,8 +206,29 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
 
 
 class HighlyAdaptiveRidgeCV(KernelRidgeCV):
-    def __init__(self, depth=np.inf, order=0, decay=1.0, weights=None, **kwargs):
-        super().__init__(kernels=[kernels.HighlyAdaptiveRidge(depth=depth, order=order, decay=decay, weights=weights)], **kwargs)
+    """HAR with alpha chosen by cross-validation, and optionally the depth or the decay.
+
+    depths: a sequence of depths to choose from, in increasing order. Each kernel
+        uses the given decay.
+    decays: a sequence of decays to choose from, from small to large. Each kernel
+        uses the given depth. At high p a useful scale is decay = gamma / p, because
+        a knot below both points in all p coordinates then adds
+        (1 + gamma / p)^p - 1 < e^gamma to the kernel.
+    Give at most one of the two, because early stopping (patience, see
+    KernelRidgeCV) walks one path. With neither, there is one kernel.
+    """
+
+    def __init__(self, depth=np.inf, order=0, decay=1.0, weights=None,
+                 depths=None, decays=None, patience=None, **kwargs):
+        if depths is not None and decays is not None:
+            raise ValueError("give depths or decays, not both: early stopping walks one path")
+        if depths is not None:
+            ks = [kernels.HighlyAdaptiveRidge(depth=d, order=order, decay=decay, weights=weights) for d in depths]
+        elif decays is not None:
+            ks = [kernels.HighlyAdaptiveRidge(depth=depth, order=order, decay=r, weights=weights) for r in decays]
+        else:
+            ks = [kernels.HighlyAdaptiveRidge(depth=depth, order=order, decay=decay, weights=weights)]
+        super().__init__(kernels=ks, patience=patience, **kwargs)
 
 
 class RadialBasisKernelRidgeCV(KernelRidgeCV):
