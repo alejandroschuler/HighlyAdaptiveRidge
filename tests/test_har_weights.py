@@ -188,13 +188,14 @@ def test_patience_stops_after_that_many_kernels_without_a_lower_error(path, cv, 
     np.testing.assert_array_equal(m.kernel_mses_, full.kernel_mses_[: len(m.kernel_mses_)])
 
 
-def test_alpha_grid_takes_the_smallest_eigenvalue_from_the_eigendecomposition():
+def test_alpha_grid_takes_the_extreme_eigenvalues_from_the_eigendecomposition():
     X, Y = path_data()
     kernel = HighlyAdaptiveRidge()
     K = kernel(X)
-    _, min_eig = _prep(K, Y)
+    _, min_eig, max_eig = _prep(K, Y)
     np.testing.assert_allclose(
-        kernel.alpha_grid(Y, 20, 1e-3, K=K, min_eig=min_eig), kernel.alpha_grid(Y, 20, 1e-3, K=K), rtol=1e-12
+        kernel.alpha_grid(Y, 20, 1e-3, K=K, min_eig=min_eig, max_eig=max_eig), kernel.alpha_grid(Y, 20, 1e-3, K=K),
+        rtol=1e-12,
     )
 
 

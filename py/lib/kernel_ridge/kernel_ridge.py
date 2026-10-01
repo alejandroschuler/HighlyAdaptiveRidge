@@ -97,6 +97,10 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
         after `patience` kernels in a row that do not lower the best CV error
         so far. Order the kernels along a path, for example by depth.
 
+    alpha_min: the bottom of each grid that Kernel.alpha_grid builds. None
+        starts it at kernels.ALPHA_FLOOR times the largest eigenvalue of the
+        kernel matrix; a number fixes it (1e-8 gives the earlier fixed floor).
+
     After fit, kernel_mses_ holds the best CV error of each kernel that was
     evaluated, in order (inf where none was finite), and alpha_grids_ holds the
     alpha grid of each of those kernels. A kernel given no grid gets its own,
@@ -107,7 +111,7 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
     def __init__(
         self, kernels, alphas=None,
         n_alphas=50, eps=1e-3,
-        cv=None, verbose=False, method='eig', patience=None,
+        cv=None, verbose=False, method='eig', patience=None, alpha_min=None,
     ):
         self.kernels = kernels
         self.alphas = [None for k in kernels] if alphas is None else alphas
@@ -119,6 +123,7 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
         #        for leave-one-out). 'brute': original per-alpha bordered solve.
         self.method = method
         self.patience = patience
+        self.alpha_min = alpha_min
 
     def fit(self, X, Y):
         if self.patience is not None and not (isinstance(self.patience, (int, np.integer)) and self.patience >= 1):
@@ -151,7 +156,8 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
                 alphas = kernel.alpha_grid(
                     Y, K=K,
                     n_alphas = self.n_alphas,
-                    eps = self.eps
+                    eps = self.eps,
+                    alpha_min = self.alpha_min,
                 )
             self.alpha_grids_.append(np.asarray(alphas, dtype=float))
             kernel_errors = []
@@ -179,7 +185,7 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
             mse = np.inf
             grid = None
             try:
-                cache, min_eig = _prep(K, Y)
+                cache, min_eig, max_eig = _prep(K, Y)
             except np.linalg.LinAlgError:
                 cache = None  # eigendecomposition failed for this kernel; let brute handle it
             if cache is not None:
@@ -188,7 +194,9 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
                         Y, K=K,
                         n_alphas=self.n_alphas,
                         eps=self.eps,
+                        alpha_min=self.alpha_min,
                         min_eig=min_eig,
+                        max_eig=max_eig,
                     )
                 alphas = np.asarray(alphas, dtype=float)
                 grid = alphas
@@ -275,7 +283,7 @@ class MixedSobolevRidgeCV(Pipeline):
         return self.__dict__['steps'][0][1]
 
 
-def ridge_alpha_grid(X, Y, n_alphas=50, eps=1e-3):
+def ridge_alpha_grid(X, Y, n_alphas=50, eps=1e-3, alpha_min=1e-8):
     """The regularization grid of the paper's appendix D, for ridge regression.
 
     Ridge does not penalize its intercept, so it solves the ridge problem of
@@ -283,11 +291,19 @@ def ridge_alpha_grid(X, Y, n_alphas=50, eps=1e-3):
     with the linear kernel of the centered covariates and no intercept. The
     bound of appendix D is for that problem, so the grid comes from it: at the
     largest value, every fitted value is within eps max|Y - mean(Y)| of mean(Y).
+
+    The bottom stays at the fixed alpha_min, not at the floor of the kernel
+    methods, which scales with the largest eigenvalue of K. The covariates are
+    on their raw scales, so the eigenvalues of X'X that carry the signal can
+    lie far below the largest one (11 decades on naval), and a floor tied to
+    the largest one cut them off: on naval it made the test MSE about 6 times
+    worse. The SVD solve is exact at every alpha, so ridge needs no floor
+    against roundoff.
     """
     Xc = X - X.mean(axis=0)
     Yc = Y - Y.mean()
     linear = kernels.Linear()
-    return linear.alpha_grid(Yc, n_alphas=n_alphas, eps=eps, K=linear(Xc))
+    return linear.alpha_grid(Yc, n_alphas=n_alphas, eps=eps, alpha_min=alpha_min, K=linear(Xc))
 
 
 class RidgeRegressionCV(BaseEstimator, RegressorMixin):

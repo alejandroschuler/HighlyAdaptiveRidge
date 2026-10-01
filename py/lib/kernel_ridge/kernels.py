@@ -10,17 +10,35 @@ import numpy as np
 from numpy.linalg import norm, eigvalsh
 
 
+# The bottom of the alpha grid, as a fraction of eig_1(K), the largest eigenvalue
+# of K. Below about 1e-13 eig_1(K), the leave-one-out error computed in double
+# precision is roundoff. At 1e-12 eig_1(K), a full-rank kernel already gives the
+# unpenalized (interpolating) fit.
+ALPHA_FLOOR = 1e-12
+
+
 class Kernel:
 
-    def alpha_grid(self, Y, n_alphas, eps, alpha_min=1e-8, K=None, X=None, min_eig=None):
+    def alpha_grid(self, Y, n_alphas, eps, alpha_min=None, K=None, X=None, min_eig=None, max_eig=None):
         """
-        see HAR paper appendix D. min_eig is the smallest eigenvalue of K, if it is
-        already known; otherwise it is computed.
+        The grid of HAR paper appendix D: n_alphas values, log-spaced from alpha_min
+        up to lambda_0 = max_i ||K_i|| ||Y|| / (eps max_i |y_i|) - eig_n(K).
+
+        alpha_min = None starts the grid at ALPHA_FLOOR * eig_1(K), so that both ends
+        scale with K and the search does not depend on the scale of the kernel. A
+        number starts it there instead; 1e-8 gives the earlier fixed floor.
+
+        min_eig and max_eig are eig_n(K) and eig_1(K), the smallest and the largest
+        eigenvalue of K, if they are already known; otherwise they are computed.
         """
         if K is None:
-            K = self.kernel(X, X, equal=True)
-        if min_eig is None:
-            min_eig = np.min(eigvalsh(K))
+            K = self(X)
+        if min_eig is None or (alpha_min is None and max_eig is None):
+            eig = eigvalsh(K)
+            min_eig = eig[0] if min_eig is None else min_eig
+            max_eig = eig[-1] if max_eig is None else max_eig
+        if alpha_min is None:
+            alpha_min = ALPHA_FLOOR * max_eig
         alpha_max = norm(Y) * np.max(norm(K, axis=1)) / (eps * np.max(np.abs(Y))) - min_eig
         return np.geomspace(alpha_min, alpha_max, num=n_alphas)
 

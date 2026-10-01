@@ -37,6 +37,13 @@ def test_top_of_ridge_grid_regularizes_fully(seed, eps):
     assert len(grid) == 50 and np.all(np.diff(grid) > 0)
 
 
+def test_ridge_grid_keeps_the_fixed_floor():
+    """Unlike the kernel methods, ridge starts its grid at 1e-8, not at a fraction of
+    the largest eigenvalue: its covariates are on raw scales (see ridge_alpha_grid)."""
+    X, Y, _ = make_data(0)
+    assert ridge_alpha_grid(X, Y)[0] == 1e-8
+
+
 def test_ridge_cv_uses_five_folds_over_the_grid():
     X, Y, X_ = make_data(0, n=100)
     m = RidgeRegressionCV().fit(X, Y)
