@@ -8,7 +8,8 @@ from sklearn.model_selection import KFold
 
 from kernel_ridge import HighlyAdaptiveRidgeCV
 from kernel_ridge.fast import _prep
-from kernel_ridge.kernels import HighlyAdaptiveRidge
+from kernel_ridge import kernels
+from kernel_ridge.kernels import HighlyAdaptiveRidge, har_kernel
 
 
 def factor(shell, x, v, order):
@@ -195,3 +196,61 @@ def test_alpha_grid_takes_the_smallest_eigenvalue_from_the_eigendecomposition():
     np.testing.assert_allclose(
         kernel.alpha_grid(Y, 20, 1e-3, K=K, min_eig=min_eig), kernel.alpha_grid(Y, 20, 1e-3, K=K), rtol=1e-12
     )
+
+
+# The lower-level interface: har_kernel takes the section weights and the order.
+
+@pytest.mark.parametrize("order", [0, 1, 2])
+def test_har_kernel_with_generic_size_weights_matches_explicit_basis(order):
+    X, X_test = data(6, 3, p, 1)
+    w = np.array([0.0, 0.3, 0.0, 2.0, 0.1])
+    np.testing.assert_allclose(har_kernel(X, w, order, X_test), explicit_kernel(X, X_test, order, w), rtol=1e-10)
+    np.testing.assert_allclose(har_kernel(X, w, order), explicit_kernel(X, X, order, w), rtol=1e-10)
+
+
+@pytest.mark.parametrize("knots_per_block", [1, 3, 4])
+@pytest.mark.parametrize("weights", ["geometric", "general"])
+@pytest.mark.parametrize("order", [0, 1, 2])
+def test_knot_blocks_do_not_change_the_kernel(order, weights, knots_per_block):
+    n, n_test, d = 11, 4, 6  # 11 knots, so the last block of 3 or 4 is shorter
+    X, X_test = data(n, n_test, d, 2)
+    kernel = HighlyAdaptiveRidge(order=order, **(dict(decay=0.4) if weights == "geometric" else dict(depth=3)))
+    w = kernel.section_weights(d)
+    per_point = 8 * (1 if order == 0 else d)  # one word of bits, or d spline factors
+    for n_points, args in [(n, dict()), (n + n_test, dict(X_test=X_test))]:
+        block_bytes = knots_per_block * n_points * per_point
+        np.testing.assert_array_equal(
+            har_kernel(X, w, order, block_bytes=block_bytes, **args), har_kernel(X, w, order, **args)
+        )
+
+
+@pytest.mark.parametrize("order", [1, 2])
+def test_closed_form_matches_recursion(order, monkeypatch):
+    X, X_test = data(20, 5, 12, 3)
+    w = HighlyAdaptiveRidge(decay=0.3).section_weights(12)
+    closed = har_kernel(X, w, order, X_test)
+    monkeypatch.setattr(kernels, "_geometric", lambda w: (0.0, 0.0))
+    np.testing.assert_allclose(har_kernel(X, w, order, X_test), closed, rtol=1e-12)
+
+
+@pytest.mark.parametrize(
+    "w, order, match",
+    [([1.0, 1.0, 1.0, 1.0, 1.0], 0, "w_0"), ([0.0, 1.0, 1.0], 0, "one entry"), ([0.0, 1.0, 1.0, 1.0, 1.0], -1, "order")],
+)
+def test_har_kernel_checks_its_arguments(w, order, match):
+    X, _ = data(5, 1, p, 0)
+    with pytest.raises(ValueError, match=match):
+        har_kernel(X, w, order)
+
+
+def test_underflowed_decay_weights_still_use_the_closed_form(monkeypatch):
+    # decay = 1e-12 at p = 40: the weights fall below the smallest normal float after size 25
+    w = HighlyAdaptiveRidge(decay=1e-12).section_weights(40)
+    assert w[-1] == 0.0
+    assert kernels._geometric(w) == pytest.approx((1.0, 1e-12))
+    # a depth cap at a size where the weights are still normal stays a cap
+    assert kernels._geometric(HighlyAdaptiveRidge(decay=1e-12, depth=10).section_weights(40)) == (0.0, 0.0)
+    X, X_test = data(8, 3, 40, 5)
+    closed = har_kernel(X, w, 1, X_test)
+    monkeypatch.setattr(kernels, "_geometric", lambda w: (0.0, 0.0))
+    np.testing.assert_allclose(har_kernel(X, w, 1, X_test), closed, rtol=1e-12)

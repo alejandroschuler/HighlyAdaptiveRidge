@@ -90,9 +90,8 @@ class HighlyAdaptiveRidge(Kernel):
         depth: sets w_k = 0 for every k > depth. A negative or infinite depth
             keeps every section.
 
-    For order 0 the kernel first packs the comparisons X_knot <= x into bits,
-    64 coordinates to a word. The bits take n * (n + n_test) * ceil(p / 64) * 8
-    bytes, for example 192 MB for n = 2000 and p = 384.
+    section_weights(p) turns the settings into (w_0, ..., w_p), and har_kernel
+    builds the kernel from those weights and the order.
     """
     depth: int = -1
     order: int = 0
@@ -118,29 +117,102 @@ class HighlyAdaptiveRidge(Kernel):
         w = w * float(self.decay) ** np.arange(1, p + 1)
         if 0 <= self.depth < p:
             w[int(self.depth):] = 0.0
-        if not np.all(np.isfinite(w)) or np.any(w < 0):
-            raise ValueError("the section weights must be finite and nonnegative")
-        if not np.any(w > 0):
-            raise ValueError("every section weight is 0, so the kernel is 0")
-        return np.concatenate([[0.0], w])
+        return _check_section_weights(np.concatenate([[0.0], w]), p)
 
     def kernel(self, X, X_test, equal):
-        """The kernel matrix, with a row for each point of X_test and a knot and a column for each point of X."""
-        X = np.ascontiguousarray(X, dtype=np.float64)
-        X_test = np.ascontiguousarray(X_test, dtype=np.float64)
-        w = self.section_weights(X.shape[1])
-        if self.order == 0:
-            B = _pack_bits(X, X)
-            B_test = B if equal else _pack_bits(X, X_test)
-            K = _har_kernel_order0(B, B_test, _size_table(w), equal)
-        else:
-            fact_sq = np.array([float(math.factorial(k)) ** 2 for k in range(self.order + 1)])
-            scale, rate = _geometric(w)
-            max_size = int(np.flatnonzero(w)[-1])
-            K = _har_kernel_higher(X, X_test, self.order, fact_sq, w, max_size, rate, scale, equal)
-        if not np.all(np.isfinite(K)):
-            raise ValueError("the kernel overflows a float; use a smaller decay or a depth")
-        return K
+        """The kernel matrix, with a row for each point of X_test and a column for each point of X. The knots are the rows of X."""
+        w = self.section_weights(np.shape(X)[1])
+        return har_kernel(X, w, order=self.order, X_test=None if equal else X_test)
+
+
+# The bits or spline factors of one block of knots take at most this many bytes.
+_BLOCK_BYTES = 2 ** 28
+
+
+def har_kernel(X, w, order=0, X_test=None, block_bytes=_BLOCK_BYTES):
+    """The HAR kernel of order `order` with the section weights w = (w_0, ..., w_p).
+
+    K[a, b] = sum_i sum_s w_{|s|} h_{i,s}(X_test[a]) h_{i,s}(X[b]), with the knots X_i
+    the rows of X. X_test = None gives the symmetric kernel of X with itself, of
+    which only half is computed. w_0 must be 0, because KernelRidge fits the intercept.
+
+    The builder depends on the order and the weights:
+        order 0: a knot that is below both points in c coordinates adds
+            t[c] = sum_k w_k C(c, k), from a table. The comparisons of each point
+            with each knot are packed into bits, 64 coordinates to a word, so c is
+            a popcount of an AND. Any weights, at the same cost.
+        order >= 1: a knot adds sum_k w_k e_k(a), where e_k is the k-th elementary
+            symmetric polynomial of a_j = poly_j + U_j(x) U_j(x'). The polynomial
+            part poly_j does not depend on the knot, and the spline factors
+            U_j(x) = (x_j - X_ij)_+^order / order! are computed once for each point
+            and knot. Geometric weights (plain HAR, or a decay without a depth) use
+            the closed form scale * (prod_j (1 + rate a_j) - 1), in O(p) for each
+            knot, computed without the cancellation of the - 1. Other weights use
+            the recursion for e_1, ..., e_m, in O(p m) for each knot, where m is the
+            largest size with a nonzero weight.
+
+    The knots go in blocks, so that the bits or the factors of one block take at
+    most block_bytes. In all, the bits take n (n + n_test) ceil(p / 64) 8 bytes and
+    the factors n (n + n_test) p 8 bytes (n_test = 0 for the symmetric kernel). The
+    sum over the knots continues across the blocks in knot order, so the block size
+    does not change the kernel.
+    """
+    X = np.ascontiguousarray(X, dtype=np.float64)
+    n, p = X.shape
+    equal = X_test is None
+    X_test = X if equal else np.ascontiguousarray(X_test, dtype=np.float64)
+    if X_test.shape[1] != p:
+        raise ValueError(f"X has {p} columns but X_test has {X_test.shape[1]}")
+    w = _check_section_weights(w, p)
+    if order != int(order) or order < 0:
+        raise ValueError(f"order must be an integer >= 0, not {order!r}")
+    order = int(order)
+    n_points = n if equal else n + X_test.shape[0]
+    K = np.zeros((X_test.shape[0], n), dtype=np.float64)
+    if order == 0:
+        table = _size_table(w)
+        block = _block_size(n, n_points * ((p + 63) // 64) * 8, block_bytes)
+        for k0 in range(0, n, block):
+            knots = X[k0:k0 + block]
+            B = _pack_bits(knots, X)
+            B_test = B if equal else _pack_bits(knots, X_test)
+            _add_order0(K, B, B_test, table, equal)
+    else:
+        fact_sq = np.array([float(math.factorial(k)) ** 2 for k in range(order + 1)])
+        inv_fact = 1.0 / math.factorial(order)
+        scale, rate = _geometric(w)
+        max_size = int(np.flatnonzero(w)[-1])
+        block = _block_size(n, n_points * p * 8, block_bytes)
+        for k0 in range(0, n, block):
+            knots = X[k0:k0 + block]
+            U = _spline_factors(knots, X, order, inv_fact)
+            U_test = U if equal else _spline_factors(knots, X_test, order, inv_fact)
+            if rate > 0:
+                _add_higher_geometric(K, U, U_test, X, X_test, order, fact_sq, rate, scale, equal)
+            else:
+                _add_higher_general(K, U, U_test, X, X_test, order, fact_sq, w, max_size, equal)
+    if not np.all(np.isfinite(K)):
+        raise ValueError("the kernel overflows a float; use a smaller decay or a depth")
+    return K
+
+
+def _check_section_weights(w, p):
+    """w as a float array, after a check that it is a valid (w_0, ..., w_p) with w_0 = 0."""
+    w = np.asarray(w, dtype=np.float64)
+    if w.shape != (p + 1,):
+        raise ValueError(f"the section weights need one entry for each size 0, ..., {p}, not shape {w.shape}")
+    if not np.all(np.isfinite(w)) or np.any(w < 0):
+        raise ValueError("the section weights must be finite and nonnegative")
+    if w[0] != 0:
+        raise ValueError("the weight w_0 of the empty section must be 0, because KernelRidge fits the intercept")
+    if not np.any(w > 0):
+        raise ValueError("every section weight is 0, so the kernel is 0")
+    return w
+
+
+def _block_size(n, bytes_per_knot, block_bytes):
+    """The number of knots in a block: at most n, at least 1."""
+    return int(max(1, min(n, block_bytes // max(bytes_per_knot, 1))))
 
 
 def _size_table(w):
@@ -168,16 +240,31 @@ def _size_table(w):
 
 
 def _geometric(w):
-    """(scale, rate) with w_k = scale * rate**k for k = 1, ..., p, or (0, 0) if the weights are not geometric."""
+    """(scale, rate) with w_k = scale * rate**k for k = 1, ..., p, or (0, 0) if the weights are not geometric.
+
+    A small decay at high p makes the last weights fall below the smallest normal
+    float, to a subnormal or to 0. Those weights count as geometric when the sequence
+    of the larger weights is also below the smallest normal float at those sizes.
+    The closed form then keeps their terms, which are negligible. A depth cap at a
+    size where the weights are still normal stays a cap.
+    """
     v = w[1:]
-    if np.any(v <= 0):
+    tiny = np.finfo(np.float64).tiny
+    normal = v >= tiny
+    m = len(v) if normal.all() else int(np.argmin(normal))  # the first m weights are normal
+    if m == 0 or normal[m:].any():
         return 0.0, 0.0
     if len(v) == 1:
         return float(v[0]), 1.0
+    if m == 1:
+        return 0.0, 0.0
     rate = v[1] / v[0]
-    if np.allclose(v, v[0] * rate ** np.arange(len(v)), rtol=1e-12, atol=0):
-        return float(v[0] / rate), float(rate)
-    return 0.0, 0.0
+    k = np.arange(len(v))
+    if not np.allclose(v[:m], v[0] * rate ** k[:m], rtol=1e-12, atol=0):
+        return 0.0, 0.0
+    if not np.all(v[0] * rate ** k[m:] < tiny):
+        return 0.0, 0.0
+    return float(v[0] / rate), float(rate)
 
 
 # uint64 constants only: numba promotes a mix of uint64 and int64 to float64.
@@ -198,36 +285,36 @@ def _popcount64(x):
 
 
 @njit(parallel=True)
-def _pack_bits(X, P):
-    """B[a, i] holds the bits 1(X[i, j] <= P[a, j]) for j = 0, ..., p - 1.
+def _pack_bits(knots, P):
+    """B[a, i] holds the bits 1(knots[i, j] <= P[a, j]) for j = 0, ..., p - 1.
 
-    Bit j % 64 of word j // 64. The rows of X are the knots.
+    Bit j % 64 of word j // 64.
     """
-    n, p = X.shape
+    n_knots, p = knots.shape
     m = P.shape[0]
     W = (p + 63) // 64
-    B = np.zeros((m, n, W), dtype=np.uint64)
+    B = np.zeros((m, n_knots, W), dtype=np.uint64)
     for a in prange(m):
-        for i in range(n):
+        for i in range(n_knots):
             for j in range(p):
-                if X[i, j] <= P[a, j]:
+                if knots[i, j] <= P[a, j]:
                     B[a, i, j // 64] |= np.uint64(1) << np.uint64(j % 64)
     return B
 
 
 @njit(parallel=True)
-def _har_kernel_order0(B, B_test, table, equal):
-    """A knot is below both points in c coordinates, the popcount of the AND of
-    their bits, and adds table[c] to the kernel. The knots are summed in order.
+def _add_order0(K, B, B_test, table, equal):
+    """Add one block of knots to K. A knot is below both points in c coordinates,
+    the popcount of the AND of their bits, and adds table[c]. Each sum continues
+    from K, in knot order.
     """
-    n, _, W = B.shape
+    n, n_knots, W = B.shape
     n_test = B_test.shape[0]
-    K = np.empty((n_test, n), dtype=np.float64)
     for tr in prange(n):
         max_index = tr + 1 if equal else n_test
         for te in range(max_index):
-            sum_val = 0.0
-            for knot in range(n):
+            sum_val = K[te, tr]
+            for knot in range(n_knots):
                 c = 0
                 for w in range(W):
                     c += _popcount64(B[tr, knot, w] & B_test[te, knot, w])
@@ -235,59 +322,119 @@ def _har_kernel_order0(B, B_test, table, equal):
             K[te, tr] = sum_val
             if equal:
                 K[tr, te] = sum_val
-    return K
+
+
+# The order >= 1 loops run over this many knots at once. The knots do not depend on
+# each other, so the compiler can vectorize over them. It does so only when the
+# inner loop reads 1D views, such as U[tr, j, c0:c0 + L], and not 3D indices.
+_CHUNK = 64
 
 
 @njit(parallel=True)
-def _har_kernel_higher(X, X_test, order, fact_sq, w, max_size, rate, scale, equal):
-    """Each coordinate j gives a knot the value a_j, and the knot adds
-    sum_k w_k e_k(a_1, ..., a_d) to the kernel, where e_k is the k-th elementary
-    symmetric polynomial. Geometric weights (rate > 0) use the closed form
-    scale * (prod_j (1 + rate * a_j) - 1). Other weights use the recursion for
-    e_1, ..., e_{max_size}.
+def _spline_factors(knots, P, order, inv_fact):
+    """U[a, j, i] = (P[a, j] - knots[i, j])_+^order / order!, with inv_fact = 1 / order!.
+
+    The knots are the last axis, so that the kernel loops read several knots at once.
     """
-    n, d = X.shape
-    n_test = X_test.shape[0]
-    K = np.empty((n_test, n), dtype=np.float64)
+    n_knots, p = knots.shape
+    m = P.shape[0]
+    U = np.empty((m, p, n_knots), dtype=np.float64)
+    for a in prange(m):
+        for j in range(p):
+            for i in range(n_knots):
+                d = P[a, j] - knots[i, j]
+                U[a, j, i] = d ** order * inv_fact if d >= 0 else 0.0
+    return U
+
+
+@njit(inline="always")
+def _poly_part(poly, X, X_test, tr, te, order, fact_sq):
+    """poly[j] = sum_{k=1}^{order} (x_j x'_j)^k / (k!)^2, the part that does not depend on the knot."""
+    for j in range(poly.shape[0]):
+        x_x_te = X[tr, j] * X_test[te, j]
+        t = 0.0
+        for k in range(1, order + 1):
+            t += x_x_te ** k / fact_sq[k]
+        poly[j] = t
+
+
+@njit(parallel=True)
+def _add_higher_geometric(K, U, U_test, X, X_test, order, fact_sq, rate, scale, equal):
+    """Add one block of knots to K, for w_k = scale * rate**k. A knot adds
+    sum_k w_k e_k(a) = scale * q, with q = prod_j (1 + t_j) - 1 and t_j = rate a_j.
+    q comes from the recursion q <- q + t_j (1 + q), which has no subtraction, so
+    it keeps its digits when rate is small and the product is close to 1. Each sum
+    continues from K, in knot order.
+    """
+    n, p, n_knots = U.shape
+    n_test = U_test.shape[0]
     for tr in prange(n):
-        a = np.empty(d, dtype=np.float64)
-        term2 = np.empty(d, dtype=np.float64)
-        e = np.empty(max_size + 1, dtype=np.float64)
+        T = np.empty(p, dtype=np.float64)
+        q = np.empty(_CHUNK, dtype=np.float64)
         max_index = tr + 1 if equal else n_test
         for te in range(max_index):
-            # the polynomial part of each coordinate does not depend on the knot
-            for j in range(d):
-                x_x_te = X[tr, j] * X_test[te, j]
-                term2[j] = 0.0
-                for k in range(1, order + 1):
-                    term2[j] += x_x_te ** k / fact_sq[k]
-            sum_val = 0.0
-            for knot in range(n):
-                for j in range(d):
-                    diff = X[tr, j] - X[knot, j]
-                    diff_te = X_test[te, j] - X[knot, j]
-                    if (diff >= 0) and (diff_te >= 0):
-                        a[j] = (diff * diff_te) ** order / fact_sq[order] + term2[j]
-                    else:
-                        a[j] = term2[j]
-                if rate > 0:
-                    prod_val = 1.0
-                    for j in range(d):
-                        prod_val *= 1.0 + rate * a[j]
-                    sum_val += scale * (prod_val - 1.0)
-                else:
-                    e[0] = 1.0
-                    for k in range(1, max_size + 1):
-                        e[k] = 0.0
-                    for j in range(d):
-                        for k in range(min(j + 1, max_size), 0, -1):
-                            e[k] += a[j] * e[k - 1]
-                    for k in range(1, max_size + 1):
-                        sum_val += w[k] * e[k]
+            _poly_part(T, X, X_test, tr, te, order, fact_sq)
+            for j in range(p):
+                T[j] = rate * T[j]  # the part of t_j that does not depend on the knot
+            sum_val = K[te, tr]
+            for c0 in range(0, n_knots, _CHUNK):
+                L = min(_CHUNK, n_knots - c0)
+                for l in range(L):
+                    q[l] = 0.0
+                for j in range(p):
+                    T_j = T[j]
+                    u = U[tr, j, c0:c0 + L]
+                    v = U_test[te, j, c0:c0 + L]
+                    for l in range(L):
+                        t = T_j + rate * u[l] * v[l]
+                        q[l] += t * (1.0 + q[l])
+                for l in range(L):
+                    sum_val += scale * q[l]
             K[te, tr] = sum_val
             if equal:
                 K[tr, te] = sum_val
-    return K
+
+
+@njit(parallel=True)
+def _add_higher_general(K, U, U_test, X, X_test, order, fact_sq, w, max_size, equal):
+    """Add one block of knots to K, for any weights. A knot adds sum_k w_k e_k(a)
+    for k <= max_size, from the recursion for e_1, ..., e_{max_size}. Each sum
+    continues from K, in knot order.
+    """
+    n, p, n_knots = U.shape
+    n_test = U_test.shape[0]
+    for tr in prange(n):
+        poly = np.empty(p, dtype=np.float64)
+        a = np.empty(_CHUNK, dtype=np.float64)
+        e = np.empty((max_size + 1, _CHUNK), dtype=np.float64)
+        max_index = tr + 1 if equal else n_test
+        for te in range(max_index):
+            _poly_part(poly, X, X_test, tr, te, order, fact_sq)
+            sum_val = K[te, tr]
+            for c0 in range(0, n_knots, _CHUNK):
+                L = min(_CHUNK, n_knots - c0)
+                for l in range(L):
+                    e[0, l] = 1.0
+                for k in range(1, max_size + 1):
+                    for l in range(L):
+                        e[k, l] = 0.0
+                for j in range(p):
+                    poly_j = poly[j]
+                    u = U[tr, j, c0:c0 + L]
+                    v = U_test[te, j, c0:c0 + L]
+                    for l in range(L):
+                        a[l] = poly_j + u[l] * v[l]
+                    for k in range(min(j + 1, max_size), 0, -1):
+                        e_k = e[k]
+                        e_below = e[k - 1]
+                        for l in range(L):
+                            e_k[l] += a[l] * e_below[l]
+                for l in range(L):
+                    for k in range(1, max_size + 1):
+                        sum_val += w[k] * e[k, l]
+            K[te, tr] = sum_val
+            if equal:
+                K[tr, te] = sum_val
 
 
 @dataclass

@@ -208,6 +208,10 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
 class HighlyAdaptiveRidgeCV(KernelRidgeCV):
     """HAR with alpha chosen by cross-validation, and optionally the depth or the decay.
 
+    order, depth, decay and weights are the settings of kernels.HighlyAdaptiveRidge,
+    which turns depth, decay and weights into one weight for each section size.
+    kernels.har_kernel then builds each kernel from those weights and the order.
+
     depths: a sequence of depths to choose from, in increasing order. Each kernel
         uses the given decay.
     decays: a sequence of decays to choose from, from small to large. Each kernel
