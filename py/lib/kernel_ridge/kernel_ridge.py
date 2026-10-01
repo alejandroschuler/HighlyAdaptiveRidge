@@ -98,7 +98,10 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
         so far. Order the kernels along a path, for example by depth.
 
     After fit, kernel_mses_ holds the best CV error of each kernel that was
-    evaluated, in order (inf where none was finite).
+    evaluated, in order (inf where none was finite), and alpha_grids_ holds the
+    alpha grid of each of those kernels. A kernel given no grid gets its own,
+    from its own kernel matrix, by Kernel.alpha_grid (the paper's appendix D).
+    The entry is None for a kernel whose eigendecomposition failed.
     """
 
     def __init__(
@@ -140,6 +143,7 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
     def _fit_brute(self, X, Y):
         self.models = []
         self.kernel_mses_ = []
+        self.alpha_grids_ = []
         errors = []
         for kernel, alphas in zip(self.kernels, self.alphas):
             K = kernel(X) # compute kernel once for all alpha, huge time saver
@@ -149,6 +153,7 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
                     n_alphas = self.n_alphas,
                     eps = self.eps
                 )
+            self.alpha_grids_.append(np.asarray(alphas, dtype=float))
             kernel_errors = []
             for alpha in alphas:
                 m = KernelRidge(kernel=kernel, alpha=alpha, verbose=self.verbose)
@@ -168,9 +173,11 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
         from .fast import _prep, loocv_path, coef_at
         self.best = None
         self.kernel_mses_ = []
+        self.alpha_grids_ = []
         for kernel, alphas in zip(self.kernels, self.alphas):
             K = kernel(X) # compute kernel once for all alpha, huge time saver
             mse = np.inf
+            grid = None
             try:
                 cache, min_eig = _prep(K, Y)
             except np.linalg.LinAlgError:
@@ -184,6 +191,7 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
                         min_eig=min_eig,
                     )
                 alphas = np.asarray(alphas, dtype=float)
+                grid = alphas
                 mses, cache = loocv_path(K, Y, alphas, cache=cache)
                 finite = np.isfinite(mses)
                 if finite.any():  # else every alpha non-finite (ill-conditioned); fall back to brute
@@ -197,6 +205,7 @@ class KernelRidgeCV(KernelRidge, BaseEstimator, RegressorMixin):
                         m.coef = coef_at(cache, float(alphas[j]))
                         self.best = m
             self.kernel_mses_.append(mse)
+            self.alpha_grids_.append(grid)
             if self._stop():
                 break
         return self
