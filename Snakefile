@@ -80,7 +80,7 @@ def lib(*dirs):
 
 
 # Helper code, by topic. Each rule declares what its script imports, and the
-# Table 1 rules declare single files, because the HAL cells take hours and
+# Table 1 rules declare single files, because the fast cells take two hours and
 # should not rerun after an edit they do not read.
 KRR = lib("py/lib/kernel_ridge")                        # HAR and the other kernel ridge methods
 HAL = lib("py/lib/highly_adaptive_regression.py")       # HAL
@@ -198,7 +198,7 @@ rule table1_cell:                  # expensive: about two hours for all 55 cells
     script: "py/table1_cell.py"
 
 
-rule table1_hal_cell:              # very expensive: hours per cell on boston and concrete
+rule table1_hal_cell:              # cheap: seconds per cell, about a minute for all 20
     input:
         data=f"{DATA}/{{dataset}}.csv",
         helpers=HAL + TABLE1_CELL + lib(f"{T1}/hal.py"),

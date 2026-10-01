@@ -105,10 +105,11 @@ repair for each state. Load it when a task needs more than these rules.
   script with `PYTHONPATH=py/lib .venv/bin/python scratch/<script>.py`.
 - `data/uci` is a link to `../../csv`, the UCI files that other projects share.
   See `data/README.md`.
-- Table 1 is expensive. Its 55 fast cells take about two hours, and its 20 HAL
-  cells take about two days, with hours per cell on boston and concrete. The
-  Table 1 rules declare single files of `py/lib/table1/`, so that an edit
-  reruns only the cells that read it. Keep it that way.
+- Table 1 is expensive. Its 55 fast cells take about two hours. Its 20 HAL
+  cells take about a minute, since the HAL rewrite of October 2026 (they took
+  two days before it). The Table 1 rules declare single files of
+  `py/lib/table1/`, so that an edit reruns only the cells that read it. Keep it
+  that way.
 - `make test` has one known failure, `test_LOOCV_for_HAR_vs_kernel_HAR[data9]`,
   a degenerate case (n = 3, d = 16, pure noise).
 - `results/legacy/` holds the output from before the pipeline: the 2024

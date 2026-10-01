@@ -45,5 +45,6 @@ make notes    # the experiments for the referee, on a wip branch
 make status   # what is current, and what a build would redo
 ```
 
-`CLAUDE.md` has the rules of the pipeline. The HAL fits of Table 1 take hours
-each on boston and concrete, so a full build of Table 1 takes more than a day.
+`CLAUDE.md` has the rules of the pipeline. A full build of Table 1 takes about
+two hours, nearly all of it in the five fast methods. The 20 HAL cells take about
+a minute.
