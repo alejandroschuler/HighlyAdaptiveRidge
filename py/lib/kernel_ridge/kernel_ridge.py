@@ -283,7 +283,7 @@ class MixedSobolevRidgeCV(Pipeline):
         return self.__dict__['steps'][0][1]
 
 
-def ridge_alpha_grid(X, Y, n_alphas=50, eps=1e-3, alpha_min=1e-8):
+def ridge_alpha_grid(X, Y, n_alphas=50, eps=1e-3, alpha_min=None):
     """The regularization grid of the paper's appendix D, for ridge regression.
 
     Ridge does not penalize its intercept, so it solves the ridge problem of
@@ -292,16 +292,21 @@ def ridge_alpha_grid(X, Y, n_alphas=50, eps=1e-3, alpha_min=1e-8):
     bound of appendix D is for that problem, so the grid comes from it: at the
     largest value, every fitted value is within eps max|Y - mean(Y)| of mean(Y).
 
-    The bottom stays at the fixed alpha_min, not at the floor of the kernel
-    methods, which scales with the largest eigenvalue of K. The covariates are
-    on their raw scales, so the eigenvalues of X'X that carry the signal can
-    lie far below the largest one (11 decades on naval), and a floor tied to
-    the largest one cut them off: on naval it made the test MSE about 6 times
-    worse. The SVD solve is exact at every alpha, so ridge needs no floor
-    against roundoff.
+    alpha_min = None starts the grid at (kernels.ALPHA_FLOOR * s_1)^2, where s_1
+    is the largest singular value of the centered covariates. This is the
+    floor of the kernel methods, applied to the singular values of X instead
+    of the eigenvalues of K = X X'. The kernel methods factor K, and roundoff
+    hides the directions below about 1e-13 eig_1(K). The SVD solve of the ridge
+    fits factors X, and it resolves directions down to about 1e-30 eig_1. Ridge
+    needs them: its covariates are on raw scales, and on naval some directions
+    that carry the signal have eigenvalues 1e-13 to 1e-17 times eig_1. A floor
+    of ALPHA_FLOOR * eig_1 cut them off and made the test MSE on naval about 6
+    times worse. A number fixes the floor instead; 1e-8 gives the earlier grid.
     """
     Xc = X - X.mean(axis=0)
     Yc = Y - Y.mean()
+    if alpha_min is None:
+        alpha_min = (kernels.ALPHA_FLOOR * np.linalg.norm(Xc, 2)) ** 2
     linear = kernels.Linear()
     return linear.alpha_grid(Yc, n_alphas=n_alphas, eps=eps, alpha_min=alpha_min, K=linear(Xc))
 
@@ -315,18 +320,20 @@ class RidgeRegressionCV(BaseEstimator, RegressorMixin):
     scale, so its alpha is the same parameter as the alpha of KernelRidge with
     the linear kernel.
 
-    The grid reaches alpha = 1e-8, where X'X can be ill-conditioned (naval has
-    constant columns, for example). The default Cholesky solve then loses
-    accuracy, so the fits use the SVD solve, which is exact for every alpha.
+    The grid reaches alpha = (1e-12 s_1)^2 (see ridge_alpha_grid; alpha_min
+    sets another floor), where X'X can be ill-conditioned (naval has constant
+    columns, for example). The default Cholesky solve then loses accuracy, so
+    the fits use the SVD solve, which is exact for every alpha.
     """
 
-    def __init__(self, n_alphas=50, eps=1e-3, cv=5):
+    def __init__(self, n_alphas=50, eps=1e-3, cv=5, alpha_min=None):
         self.n_alphas = n_alphas
         self.eps = eps
         self.cv = cv
+        self.alpha_min = alpha_min
 
     def fit(self, X, Y):
-        self.alphas_ = ridge_alpha_grid(X, Y, n_alphas=self.n_alphas, eps=self.eps)
+        self.alphas_ = ridge_alpha_grid(X, Y, n_alphas=self.n_alphas, eps=self.eps, alpha_min=self.alpha_min)
         self.search_ = GridSearchCV(
             Ridge(solver="svd"), {"alpha": self.alphas_}, cv=self.cv,
             scoring="neg_mean_squared_error",

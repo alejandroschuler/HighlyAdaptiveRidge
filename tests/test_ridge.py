@@ -37,11 +37,25 @@ def test_top_of_ridge_grid_regularizes_fully(seed, eps):
     assert len(grid) == 50 and np.all(np.diff(grid) > 0)
 
 
-def test_ridge_grid_keeps_the_fixed_floor():
-    """Unlike the kernel methods, ridge starts its grid at 1e-8, not at a fraction of
-    the largest eigenvalue: its covariates are on raw scales (see ridge_alpha_grid)."""
+def test_ridge_grid_starts_at_the_squared_floor_of_the_largest_singular_value():
+    """Ridge factors X, not K = X X', so its floor is (1e-12 s_1)^2, with s_1 the largest
+    singular value of the centered covariates. alpha_min fixes another floor."""
     X, Y, _ = make_data(0)
-    assert ridge_alpha_grid(X, Y)[0] == 1e-8
+    s_1 = np.linalg.svd(X - X.mean(axis=0), compute_uv=False)[0]
+    np.testing.assert_allclose(ridge_alpha_grid(X, Y)[0], (1e-12 * s_1) ** 2, rtol=1e-10)
+    assert ridge_alpha_grid(X, Y, alpha_min=1e-8)[0] == 1e-8
+    assert RidgeRegressionCV(alpha_min=1e-8).fit(X, Y).alphas_[0] == 1e-8
+
+
+@pytest.mark.parametrize("scale", [2.0 ** -20, 2.0 ** 20])
+def test_the_scale_of_the_covariates_does_not_change_the_ridge_fit(scale):
+    """Both ends of the ridge grid scale with X'X, so X and s X give the same fit, with
+    alpha scaled by s^2. A power of 2 scales X exactly in floating point."""
+    X, Y, X_ = make_data(0, n=100)
+    base = RidgeRegressionCV().fit(X, Y)
+    m = RidgeRegressionCV().fit(scale * X, Y)
+    np.testing.assert_allclose(m.alpha_ / scale ** 2, base.alpha_, rtol=1e-10)
+    np.testing.assert_allclose(m.predict(scale * X_), base.predict(X_), rtol=1e-8)
 
 
 def test_ridge_cv_uses_five_folds_over_the_grid():
