@@ -11,9 +11,11 @@ from numpy.linalg import norm, eigvalsh
 
 
 # The bottom of the alpha grid, as a fraction of eig_1(K), the largest eigenvalue
-# of K. Below about 1e-13 eig_1(K), the leave-one-out error computed in double
-# precision is roundoff. At 1e-12 eig_1(K), a full-rank kernel already gives the
-# unpenalized (interpolating) fit.
+# of K. Roundoff hides the directions of K below about 1e-13 eig_1(K), so for a
+# kernel that is singular to double precision, a smaller penalty would give a fit
+# and a leave-one-out error that depend on roundoff. A kernel whose smallest
+# eigenvalue is far above the floor already gives its unpenalized (interpolating)
+# fit there, and a lower floor would not change it.
 ALPHA_FLOOR = 1e-12
 
 

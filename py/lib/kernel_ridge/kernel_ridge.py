@@ -66,16 +66,17 @@ class KernelRidge(BaseEstimator, RegressorMixin):
         This technically doesn't work for HAR since the kernel is data-adaptive- actually need to recompute kernel.
         See https://is.mpg.de/fileadmin/user_upload/files/publications/pcw2005a7_[0].pdf#page=10.15
 
+        The leave-one-out residual is R_i = c_i / [A^-1]_ii, with c the kernel coefficients
+        and A the bordered matrix of _prep_fit. It equals (Y_i - Yhat_i) / (1 - h_i), but
+        that form divides two differences that both go to 0 with alpha, so in double
+        precision its error grows like 1 / alpha. fast.py has the derivation.
+
         Returns LOOCV MSE
         """
         n, _ = self.K.shape
         K_, _ = self._prep_fit(self.K, Y)
-        H = self._solve(
-            K_.T, 
-            np.vstack([self.K, np.ones((1,n))])
-        )
-        Yhat = self._predict_kernel(self.K, self.coef)
-        R = (Y - Yhat) / (1- np.diag(H))
+        A_inv = self._solve(K_, np.eye(n + 1))
+        R = self.coef[:n] / np.diag(A_inv)[:n]
         return np.mean(R ** 2)
     
     def cv(self, Y, cv=None):

@@ -110,8 +110,9 @@ repair for each state. Load it when a task needs more than these rules.
   two days before it). The Table 1 rules declare single files of
   `py/lib/table1/`, so that an edit reruns only the cells that read it. Keep it
   that way.
-- `make test` has one known failure, `test_LOOCV_for_HAR_vs_kernel_HAR[data9]`,
-  a degenerate case (n = 3, d = 16, pure noise).
+- `make test` has no known failures. On a branch without the LOOCV fix of
+  October 2026, `test_LOOCV_for_HAR_vs_kernel_HAR[data9]` fails, a degenerate
+  case (n = 3, d = 16, pure noise).
 - `results/legacy/` holds the output from before the pipeline: the 2024
   notebook runs and the seeded reproduction of June 2026, with its
   `VERIFICATION.md`. No rule reads it.
