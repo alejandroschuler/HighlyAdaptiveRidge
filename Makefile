@@ -9,6 +9,7 @@
 #   make wip TOPIC=overlap   start wip/overlap off main (BASE=<branch> to change)
 #   make notes               exploratory artefacts, on a wip branch
 #   make build               manuscript artefacts, on main only
+#                            (BUILD_TARGETS=<files> builds only those)
 #   make pdf                 compile the manuscript with the recorder on
 #   make status              what is current, stale, drifted, orphaned, unused
 #   make check               the invariants; what pre-push and push-paper run
@@ -54,6 +55,8 @@ BASE ?= $(MAIN)
 # latexmk's engine flag. Set LATEXMK_ENGINE=-lualatex or -xelatex to match
 # the compiler the Overleaf project uses.
 LATEXMK_ENGINE ?= -pdf
+# What `make build` builds: every paper artefact, or the files named here.
+BUILD_TARGETS ?= all
 # What the tooling writes inside the paper repo. push-paper commits these, and
 # nothing else, as "regenerate artefacts".
 GENERATED := artefacts notes/artefacts artefacts.sty .gitignore
@@ -93,7 +96,7 @@ notes: $(ENV_STAMP)
 
 build: $(ENV_STAMP)
 	@$(PY) $(TOOLS)/build_guard.py --tier paper
-	@$(SNAKEMAKE) --cores $(CORES) --config tier=paper
+	@$(SNAKEMAKE) $(BUILD_TARGETS) --cores $(CORES) --config tier=paper
 
 test: $(ENV_STAMP)
 	@$(PYTEST) -q

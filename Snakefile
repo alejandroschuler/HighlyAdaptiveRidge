@@ -24,7 +24,7 @@ os.environ["PYTHONPATH"] = os.pathsep.join(
 # The registry: every artefact the manuscript uses. A name here without a rule
 # below fails at once with MissingRuleException, so this list is safe to treat
 # as the registry.
-NUMBERS: list[str] = []
+NUMBERS = ["kernel-scale"]             # the scale of the plain HAR kernel matrix
 FIGURES = ["fits", "convergence"]      # Figures 1 and 2
 TABLES = ["empirical"]                 # Table 1
 
@@ -221,6 +221,24 @@ rule table_empirical:
         datasets=TABLE1_DATASETS,
         methods=TABLE1_METHODS,
     script: "py/table_empirical.py"
+
+
+# ---------------------------------------------------------------------------
+# The scale of the plain HAR kernel matrix (Section "Sectional Weights"): its
+# largest, smallest and largest off-diagonal elements for one draw of
+# Unif([0,1]^200) points. It builds one kernel, in seconds. The script imports
+# the kernels through the package, so it reads these files and no others.
+
+rule kernel_scale:
+    input:
+        helpers=lib(
+            "py/lib/kernel_ridge/__init__.py", "py/lib/kernel_ridge/kernel_ridge.py",
+            "py/lib/kernel_ridge/kernels.py", "py/lib/kernel_ridge/timer.py",
+            "py/lib/artefacts.py",
+        ),
+    output:
+        f"{ART}/numbers/kernel-scale.tex",
+    script: "py/kernel_scale.py"
 
 
 # ---------------------------------------------------------------------------
