@@ -9,7 +9,8 @@
 #   make wip TOPIC=overlap   start wip/overlap off main (BASE=<branch> to change)
 #   make notes               exploratory artefacts, on a wip branch
 #   make build               manuscript artefacts, on main only
-#                            (BUILD_TARGETS=<files> builds only those)
+#                            (BUILD_TARGETS=<files> builds only those,
+#                            SNAKEMAKE_FLAGS=--keep-going keeps going past a failed job)
 #   make pdf                 compile the manuscript with the recorder on
 #   make status              what is current, stale, drifted, orphaned, unused
 #   make check               the invariants; what pre-push and push-paper run
@@ -57,6 +58,8 @@ BASE ?= $(MAIN)
 LATEXMK_ENGINE ?= -pdf
 # What `make build` builds: every paper artefact, or the files named here.
 BUILD_TARGETS ?= all
+# Extra Snakemake flags for `make build`, such as --keep-going for a long run.
+SNAKEMAKE_FLAGS ?=
 # What the tooling writes inside the paper repo. push-paper commits these, and
 # nothing else, as "regenerate artefacts".
 GENERATED := artefacts notes/artefacts artefacts.sty .gitignore
@@ -96,7 +99,7 @@ notes: $(ENV_STAMP)
 
 build: $(ENV_STAMP)
 	@$(PY) $(TOOLS)/build_guard.py --tier paper
-	@$(SNAKEMAKE) $(BUILD_TARGETS) --cores $(CORES) --config tier=paper
+	@$(SNAKEMAKE) $(BUILD_TARGETS) --cores $(CORES) $(SNAKEMAKE_FLAGS) --config tier=paper
 
 test: $(ENV_STAMP)
 	@$(PYTEST) -q

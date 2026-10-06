@@ -1,4 +1,4 @@
-"""The simulations: the Figure 1 demonstration, the Figure 2 convergence study,
+"""The simulations: the Figure 1 demonstration (demo.py), the Figure 2 convergence study,
 and the two experiments for the referee (noise levels and dimension).
 
 Each cell draws its datasets from a seed built from the cell's name (sample

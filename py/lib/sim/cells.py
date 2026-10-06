@@ -3,24 +3,8 @@ import numpy as np
 import pandas as pd
 
 from . import design
-from .dgps import DIMENSION_DGPS, demo_truth, draw_convergence, draw_demo
-from .learners import demo_learners, dimension_learners, har_learner
-
-
-def fits(rep, n_jobs=-1):
-    """Figure 1, one repetition: each method's predictions on a grid."""
-    rng = np.random.default_rng(design.SEED + rep)
-    X, Y = draw_demo(design.DEMO_N, design.DEMO_SIGMA, rng)
-    grid = np.linspace(-1, 1, design.DEMO_GRID)
-    truth = demo_truth(grid)
-    frames = []
-    for name, learner in demo_learners(rep, n_jobs).items():
-        learner.fit(X, Y)
-        frames.append(pd.DataFrame({
-            "rep": rep, "learner": name, "x": grid, "truth": truth,
-            "prediction": learner.predict(grid.reshape(-1, 1)),
-        }))
-    return pd.concat(frames, ignore_index=True)
+from .dgps import DIMENSION_DGPS, draw_convergence
+from .learners import dimension_learners, har_learner
 
 
 def convergence(sigma, n):

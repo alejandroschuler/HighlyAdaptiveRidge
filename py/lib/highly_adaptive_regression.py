@@ -812,6 +812,8 @@ class HighlyAdaptiveLassoCV(BaseEstimator, RegressorMixin):
     all the data. The basis has knots at every training point, also in the folds.
 
     alphas: a grid to use instead, as in LassoCV.
+    cv: the number of unshuffled folds, as in LassoCV, or the folds themselves: a
+        scikit-learn splitter, or a list of (train, test) index arrays.
     ridge: the tiny ridge penalty that picks the least-norm lasso solution (see the module
         docstring). 0 gives the lasso solution that the solver happens to land on.
     tol: the duality gap, relative to ||y - mean(y)||^2, below which coordinate descent may
@@ -857,7 +859,12 @@ class HighlyAdaptiveLassoCV(BaseEstimator, RegressorMixin):
         else:
             alphas = np.geomspace(alpha_max, alpha_max * self.eps, num=self.n_alphas)
 
-        folds = list(KFold(self.cv).split(X))
+        if isinstance(self.cv, (int, np.integer)):
+            folds = list(KFold(self.cv).split(X))
+        elif hasattr(self.cv, "split"):
+            folds = list(self.cv.split(X))
+        else:
+            folds = [(np.asarray(train), np.asarray(test)) for train, test in self.cv]
         problems = [_Problem(basis, train) for train, _ in folds]
 
         def cv_error(k):

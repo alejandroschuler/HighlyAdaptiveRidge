@@ -24,9 +24,11 @@ os.environ["PYTHONPATH"] = os.pathsep.join(
 # The registry: every artefact the manuscript uses. A name here without a rule
 # below fails at once with MissingRuleException, so this list is safe to treat
 # as the registry.
-NUMBERS = ["kernel-scale"]             # the scale of the plain HAR kernel matrix
+NUMBERS = ["kernel-scale",             # the scale of the plain HAR kernel matrix
+           "empirical",                # the settings of the estimators and of Table 1
+           "fits"]                     # the settings of Figure 1
 FIGURES = ["fits", "convergence"]      # Figures 1 and 2
-TABLES = ["empirical"]                 # Table 1
+TABLES = ["empirical", "runtime"]      # Table 1 (test RMSE) and the fit times
 
 # Exploratory output. Deliberately not part of `rule all`: a manuscript build
 # should not drag along months of abandoned exploration. These two are the
@@ -85,9 +87,29 @@ def lib(*dirs):
 KRR = lib("py/lib/kernel_ridge")                        # HAR and the other kernel ridge methods
 HAL = lib("py/lib/highly_adaptive_regression.py")       # HAL
 T1 = "py/lib/table1"
-TABLE1_CELL = lib(f"{T1}/__init__.py", f"{T1}/design.py", f"{T1}/data.py", f"{T1}/cell.py")
+TABLE1_FIT = lib(f"{T1}/__init__.py", f"{T1}/design.py", f"{T1}/data.py", f"{T1}/fit.py")
 SIM = lib("py/lib/sim") + KRR + HAL                     # the simulations; cheap, so declared broadly
+DEMO = lib("py/lib/sim/__init__.py", "py/lib/sim/design.py", "py/lib/sim/dgps.py", "py/lib/sim/demo.py")
 DISPLAY = lib("py/lib/display", "py/lib/artefacts.py")  # summaries, figures and tables
+
+# The estimators of Section 4, one module each in py/lib/estimators. Each rule
+# that fits an estimator declares that estimator's code and nothing else, so an
+# edit to one estimator reruns only its fits.
+EST = "py/lib/estimators"
+EST_BASE = lib(f"{EST}/__init__.py", f"{EST}/folds.py")
+KPATH = EST_BASE + KRR + lib(f"{EST}/kernel_path.py")
+ESTIMATOR_CODE = {
+    "har": KPATH + lib(f"{EST}/depths.py", f"{EST}/har.py"),
+    "har1": KPATH + lib(f"{EST}/depths.py", f"{EST}/har1.py"),
+    "mixed_sobolev": KPATH + lib(f"{EST}/mixed_sobolev.py"),
+    "rbf": KPATH + lib(f"{EST}/rbf.py"),
+    "hal": EST_BASE + HAL + lib(f"{EST}/hal.py"),
+    "rf": EST_BASE + lib(f"{EST}/rf.py"),
+    "gbt": EST_BASE + lib(f"{EST}/gbt.py"),
+    "mlp": EST_BASE + lib(f"{EST}/mlp.py"),
+    "enet": EST_BASE + lib(f"{EST}/enet.py"),
+}
+ESTIMATORS = list(ESTIMATOR_CODE)   # the order of Section 4
 
 
 # ---------------------------------------------------------------------------
@@ -101,12 +123,18 @@ TABLE1_DATASETS = [
     "power", "yacht", "concrete", "energy", "kin8nm", "protein",
     "wine", "boston", "naval", "yearmsd", "slice",
 ]
-TABLE1_HAL_DATASETS = ["yacht", "energy", "boston", "concrete"]
 TABLE1_REPS = list(range(5))
-TABLE1_METHODS = [
-    "HAR", "HAL", "Mixed Sobolev KRR", "Radial Basis KRR", "Random Forest",
-    "Ridge Regression",
-]
+# The fits that are not run. HAL's implementation handles at most 63
+# covariates. A first-order HAR kernel on slice takes minutes to build on one
+# core, so even its first depth would take the fit far past its time budget.
+TABLE1_SKIP = {("yearmsd", "hal"), ("slice", "hal"), ("slice", "har1")}
+TABLE1_FITS = [(d, m) for d in TABLE1_DATASETS for m in ESTIMATORS if (d, m) not in TABLE1_SKIP]
+
+
+def table1_files(kind):
+    """The result or tuning file of every Table 1 fit."""
+    suffix = "" if kind == "result" else "-tuning"
+    return [f"results/table1/{d}/{m}/rep{r}{suffix}.csv" for d, m in TABLE1_FITS for r in TABLE1_REPS]
 
 # Figure 2 and the noise sweep are one simulation over (sigma, n).
 CONVERGENCE_N = [50, 125, 200, 300, 400, 600]
@@ -117,8 +145,16 @@ NOISE_SIGMA = ["0.1", "0.5", "1.0"]    # the noise sweep
 DIMENSION_DGPS = ["interaction", "additive"]
 DIMENSION_P = [5, 8, 10, 15, 20, 30]
 
+# Every job runs on one thread: the linear algebra (Accelerate, OpenBLAS, MKL),
+# OpenMP and numba. Jobs run in parallel, one to a core, so the time of each
+# fit is the time of one core, and the times of the estimators compare.
+for _v in ["VECLIB_MAXIMUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+           "OMP_NUM_THREADS", "NUMBA_NUM_THREADS"]:
+    os.environ[_v] = "1"
+
 wildcard_constraints:
     dataset=r"[a-z0-9]+",
+    method=r"[a-z0-9_]+",
     rep=r"\d+",
     sigma=r"[0-9.]+",
     n=r"\d+",
@@ -184,42 +220,48 @@ rule artefacts_tex:
 
 
 # ---------------------------------------------------------------------------
-# Table 1 (tab:empirical): the test RMSE of six methods on eleven UCI datasets.
-# The cells write results/, and the table reads them, so a change to the
-# table's format reruns no fit. Each cell job takes every core it is given.
+# Table 1 (tab:empirical) and the fit times (tab:runtime): nine estimators on
+# eleven UCI datasets. Each fit is one job, on one thread: one estimator, one
+# dataset and one repetition. The fits write results/, and the tables read it,
+# so a change to a table's format reruns no fit, and a change to one
+# estimator reruns only its fits.
 
-rule table1_cell:                  # expensive: about two hours for all 55 cells
+def _fit_code(wc):
+    return ESTIMATOR_CODE[wc.method] + TABLE1_FIT
+
+
+rule table1_fit:
     input:
         data=f"{DATA}/{{dataset}}.csv",
-        helpers=KRR + TABLE1_CELL + lib(f"{T1}/learners.py"),
+        helpers=_fit_code,
     output:
-        "results/table1/{dataset}/rep{rep}.csv",
-    threads: workflow.cores
-    script: "py/table1_cell.py"
+        result="results/table1/{dataset}/{method}/rep{rep}.csv",
+        tuning="results/table1/{dataset}/{method}/rep{rep}-tuning.csv",
+    wildcard_constraints:
+        method="(?!har1)[a-z0-9_]+",
+    threads: 1
+    script: "py/table1_fit.py"
 
 
-rule table1_hal_cell:              # cheap: seconds per cell, about a minute for all 20
-    input:
-        data=f"{DATA}/{{dataset}}.csv",
-        helpers=HAL + TABLE1_CELL + lib(f"{T1}/hal.py"),
-    output:
-        "results/table1/{dataset}/rep{rep}-hal.csv",
-    threads: workflow.cores
-    script: "py/table1_hal_cell.py"
+# First-order HAR has the longest fits, so its jobs start first.
+use rule table1_fit as table1_fit_har1 with:
+    wildcard_constraints:
+        method="har1",
+    priority: 10
 
 
 rule table_empirical:
     input:
-        cells=expand("results/table1/{dataset}/rep{rep}.csv",
-                     dataset=TABLE1_DATASETS, rep=TABLE1_REPS),
-        hal=expand("results/table1/{dataset}/rep{rep}-hal.csv",
-                   dataset=TABLE1_HAL_DATASETS, rep=TABLE1_REPS),
+        results=table1_files("result"),
+        tunings=table1_files("tuning"),
         helpers=DISPLAY,
     output:
-        f"{ART}/tables/empirical.tex",
+        rmse=f"{ART}/tables/empirical.tex",
+        runtime=f"{ART}/tables/runtime.tex",
+        numbers=f"{ART}/numbers/empirical.tex",
     params:
         datasets=TABLE1_DATASETS,
-        methods=TABLE1_METHODS,
+        methods=ESTIMATORS,
     script: "py/table_empirical.py"
 
 
@@ -242,23 +284,27 @@ rule kernel_scale:
 
 
 # ---------------------------------------------------------------------------
-# Figure 1 (fig:fits): the fits of six methods on one-dimensional data.
+# Figure 1 (fig:fits): the fits of the nine estimators on one-dimensional data.
+# Each estimator is one job.
 
 rule sim_fits:
     input:
-        helpers=SIM,
+        helpers=lambda wc: ESTIMATOR_CODE[wc.method] + DEMO,
     output:
-        "results/fits/predictions.csv",
-    threads: workflow.cores
+        "results/fits/{method}.csv",
+    threads: 1
     script: "py/sim_fits.py"
 
 
 rule fig_fits:
     input:
-        predictions="results/fits/predictions.csv",
+        predictions=expand("results/fits/{method}.csv", method=ESTIMATORS),
         helpers=DISPLAY,
     output:
-        f"{ART}/figures/fits.pdf",
+        figure=f"{ART}/figures/fits.pdf",
+        numbers=f"{ART}/numbers/fits.tex",
+    params:
+        methods=ESTIMATORS,
     script: "py/fig_fits.py"
 
 

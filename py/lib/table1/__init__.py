@@ -1,6 +1,8 @@
-"""The Table 1 benchmark (tab:empirical): six methods on eleven UCI datasets.
+"""The Table 1 benchmark (tab:empirical) and its fit times (tab:runtime): the nine
+estimators of Section 4 on eleven UCI datasets.
 
-A cell is one dataset and one repetition. The Snakefile lists the cells and
-declares, for each rule, only the files here that its cells use, because the
-55 fast cells take about two hours and should not rerun after an unrelated edit.
+A fit is one estimator on one dataset and one repetition, and it is one job of
+the pipeline, on one thread. The Snakefile lists the fits and declares, for
+each, only the code of its estimator, so that an edit to one estimator reruns
+only its fits.
 """

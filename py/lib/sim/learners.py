@@ -1,4 +1,4 @@
-"""The learners of the simulations, with the paper's settings."""
+"""The learners of the convergence study and the dimension sweep."""
 from sklearn.ensemble import HistGradientBoostingRegressor, RandomForestRegressor
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.neural_network import MLPRegressor
@@ -16,23 +16,6 @@ from kernel_ridge import (
 N_ALPHAS = 50
 GAMMAS = [0.001, 0.01, 0.1, 1, 10]
 RF_TREES = 2000
-
-
-def demo_learners(rep, n_jobs=-1):
-    """The six methods of Figure 1. The regularization searches of the kernel
-    methods keep the values of the original notebook: eps = 1e-10 for HAR and
-    radial basis KRR, and 1e-6 for mixed Sobolev KRR. Ridge uses the Table 1
-    search."""
-    return {
-        "Ridge Regression": RidgeRegressionCV(n_alphas=N_ALPHAS, cv=5),
-        "Random Forest": RandomForestRegressor(
-            n_estimators=RF_TREES, n_jobs=n_jobs, random_state=rep
-        ),
-        "Radial Basis KRR": RadialBasisKernelRidgeCV(gammas=GAMMAS, eps=1e-10),
-        "Mixed Sobolev KRR": MixedSobolevRidgeCV(eps=1e-6),
-        "HAL": HighlyAdaptiveLassoCV(),
-        "HAR": HighlyAdaptiveRidgeCV(eps=1e-10, order=0),
-    }
 
 
 def har_learner():
