@@ -105,11 +105,16 @@ repair for each state. Load it when a task needs more than these rules.
   script with `PYTHONPATH=py/lib .venv/bin/python scratch/<script>.py`.
 - `data/uci` is a link to `../../csv`, the UCI files that other projects share.
   See `data/README.md`.
-- Table 1 is expensive. Its 55 fast cells take about two hours. Its 20 HAL
-  cells take about a minute, since the HAL rewrite of October 2026 (they took
-  two days before it). The Table 1 rules declare single files of
-  `py/lib/table1/`, so that an edit reruns only the cells that read it. Keep it
-  that way.
+- Table 1 (`tab:empirical`) and its time table (`tab:runtime`) are 480 fits:
+  nine estimators, one module each in `py/lib/estimators/`, on eleven datasets
+  and five repetitions. Each fit is one Snakemake job on one thread, so that
+  the times compare, and the Snakefile runs every job on one thread. The full
+  run took about three and a half hours with `CORES=6` in October 2026. HAL and
+  first-order HAR stop their depth walks on a 20-minute budget per fit, but a
+  first depth always runs: HAL's first depth on naval takes about an hour. Each fit rule declares only
+  its estimator's code, so an edit to one estimator reruns only its fits. Keep
+  it that way. Run the fits with fewer jobs than free cores (other sessions
+  share this machine), and with `SNAKEMAKE_FLAGS=--keep-going`.
 - `make test` has no known failures. On a branch without the LOOCV fix of
   October 2026, `test_LOOCV_for_HAR_vs_kernel_HAR[data9]` fails, a degenerate
   case (n = 3, d = 16, pure noise).
@@ -118,9 +123,10 @@ repair for each state. Load it when a task needs more than these rules.
   `VERIFICATION.md`. No rule reads it.
 - `reviews/` holds the confidential referee reports. It is ignored here, and
   nothing from it goes into a commit or a push.
-- Until the user decides otherwise, the paper keeps its hand-placed figures,
-  `paper/fits.pdf` and `paper/convergence.pdf`, and its hand-typed Table 1.
-  All three came from the 2024 notebooks in `legacy/`. The Snakefile builds
-  their replacements, which the paper does not use yet.
+- Since October 2026 the paper uses the pipeline's Figure 1
+  (`artefacts/figures/fits.pdf`), Table 1 and the time table. The hand-placed
+  2024 files `paper/fits.pdf` and `paper/convergence.pdf` are no longer used,
+  and the paper no longer has a convergence figure, so the Snakefile's
+  `convergence` figure is unused too.
 - The `upstream` remote (Alex Hagemeister's fork) has a separate refactor from
   March 2026 that this history does not include.
