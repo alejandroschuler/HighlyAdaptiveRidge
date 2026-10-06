@@ -3,8 +3,17 @@ the penalty and the mixing weight tuned by 5-fold CV over the shared folds.
 
 For each mixing weight, the penalty grid runs from the smallest penalty that
 sets every coefficient to zero down to EPS times it, with N_ALPHAS values evenly
-spaced on the log scale (scikit-learn's construction). The mixing weight is the
-lasso's share of the penalty: 0 is ridge and 1 is the lasso.
+spaced on the log scale (scikit-learn's construction), 25 values for each factor
+of ten. The mixing weight is the lasso's share of the penalty: 0 is ridge and 1
+is the lasso.
+
+EPS is 1e-6 because at 1e-4 the smallest penalty was chosen on naval with the
+cross-validated risk still falling there by more than one standard error (on
+the first two splits). At 1e-6 the risk is flat at the bottom of the grid on
+naval too, and naval's test error moved by less than 0.1%. On the other
+datasets whose choice sat at the bottom, the risk was already flat there. A
+choice at the bottom then says that the data want almost no penalty, the hard
+limit of the path.
 """
 import numpy as np
 from sklearn.linear_model import ElasticNetCV
@@ -13,8 +22,8 @@ from sklearn.preprocessing import StandardScaler
 
 NAME = "Elastic Net"
 MIXTURES = [0.1, 0.5, 0.9]
-N_ALPHAS = 100
-EPS = 1e-4
+N_ALPHAS = 150
+EPS = 1e-6
 MAX_ITER = 10_000
 
 

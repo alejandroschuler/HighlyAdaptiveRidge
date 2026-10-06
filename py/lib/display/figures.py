@@ -6,28 +6,29 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
-FITS_PANELS = [
-    "Ridge Regression", "Random Forest", "Radial Basis KRR",
-    "Mixed Sobolev KRR", "HAL", "HAR",
-]
 DIMENSION_TITLES = {"interaction": "2-way interaction", "additive": "sparse additive"}
 
 
-def fits(df):
-    """Figure 1: each method's fits in the three repetitions, against the truth."""
-    fig, axes = plt.subplots(2, 3, figsize=(11, 7), sharex=True, sharey=True)
+def fits(df, methods):
+    """Figure 1: each estimator's fits in the repetitions, against the truth, one
+    panel per estimator in the order of `methods`."""
+    cols = 3
+    rows = -(-len(methods) // cols)
+    fig, axes = plt.subplots(rows, cols, figsize=(10, 3 * rows), sharex=True, sharey=True)
     grid = np.sort(df["x"].unique())
     truth = df.drop_duplicates("x").set_index("x").loc[grid, "truth"].to_numpy()
     colors = plt.cm.viridis(np.linspace(0.1, 0.8, df["rep"].nunique()))
-    for ax, name in zip(axes.ravel(), FITS_PANELS):
-        sub = df[df["learner"] == name]
+    for ax, method in zip(axes.ravel(), methods):
+        sub = df[df["method"] == method]
         for rep, c in zip(sorted(sub["rep"].unique()), colors):
             r = sub[sub["rep"] == rep].sort_values("x")
             ax.plot(r["x"], r["prediction"], color=c, lw=1.3, alpha=0.9)
         ax.plot(grid, truth, color="black", lw=2.5, label="truth")
-        ax.set_title(name)
+        ax.set_title(sub["learner"].iloc[0])
         ax.set_ylim(-1.25, 1.25)
         ax.axhline(0, color="0.85", lw=0.6, zorder=0)
+    for ax in axes.ravel()[len(methods):]:
+        ax.set_visible(False)
     for ax in axes[-1]:
         ax.set_xlabel("x")
     for ax in axes[:, 0]:

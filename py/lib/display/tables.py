@@ -1,14 +1,17 @@
-"""Table 1 as the paper prints it."""
+"""Table 1 and the time table as the paper prints them."""
 import pandas as pd
 
-# Column headers, as the paper sets them.
+# Column headers, as the paper sets them, by estimator slug.
 HEADERS = {
-    "HAR": "HAR",
-    "HAL": "HAL",
-    "Mixed Sobolev KRR": r"\makecell{Mixed\\Sobolev\\KRR}",
-    "Radial Basis KRR": r"\makecell{Radial\\Basis\\KRR}",
-    "Random Forest": r"\makecell{Random\\Forest}",
-    "Ridge Regression": r"\makecell{Ridge\\Regression}",
+    "har": "HAR",
+    "har1": r"\makecell{1st-order\\HAR}",
+    "mixed_sobolev": r"\makecell{Mixed\\Sobolev\\KRR}",
+    "rbf": r"\makecell{Radial\\Basis\\KRR}",
+    "hal": "HAL",
+    "rf": r"\makecell{Random\\Forest}",
+    "gbt": r"\makecell{Gradient\\Boosted\\Trees}",
+    "mlp": "MLP",
+    "enet": r"\makecell{Elastic\\Net}",
 }
 
 
@@ -19,16 +22,32 @@ def rmse_cell(x):
     return mantissa if e == 0 else f"{mantissa}e{e:+d}"
 
 
+def seconds_cell(x):
+    """Two significant digits, and whole seconds from 10 up: 0.031, 0.42, 3.4, 45, 1200."""
+    if x >= 10:
+        return f"{x:.0f}"
+    return f"{float(f'{x:.2g}'):g}"
+
+
+def _body(tab, methods, cell, bold_min):
+    rows = []
+    for _, r in tab.iterrows():
+        present = {m: r[m] for m in methods if m in r and pd.notna(r[m])}
+        best = min(present, key=present.get) if bold_min else None
+        row = {"data": str(r["data"]), "$n$": int(r["n"]), "$p$": int(r["d"])}
+        for m in methods:
+            text = cell(r[m]) if m in present else "---"
+            row[HEADERS[m]] = rf"\textbf{{{text}}}" if m == best else text
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def empirical(tab, methods):
     """The body of Table 1: one row per dataset, the lowest RMSE of each row in
     bold, and --- where a method was not run."""
-    rows = []
-    for _, r in tab.iterrows():
-        present = {m: r[m] for m in methods if pd.notna(r[m])}
-        best = min(present, key=present.get)
-        row = {"data": str(r["data"]), "$n$": int(r["n"]), "$p$": int(r["d"])}
-        for m in methods:
-            cell = rmse_cell(r[m]) if m in present else "---"
-            row[HEADERS[m]] = rf"\textbf{{{cell}}}" if m == best else cell
-        rows.append(row)
-    return pd.DataFrame(rows)
+    return _body(tab, methods, rmse_cell, bold_min=True)
+
+
+def runtime(tab, methods):
+    """The body of the time table: mean seconds, --- where a method was not run."""
+    return _body(tab, methods, seconds_cell, bold_min=False)

@@ -3,21 +3,31 @@ import numpy as np
 import pandas as pd
 
 
-def table1_rmse(df, datasets, methods):
-    """Table 1: the mean over repetitions of each cell's test RMSE. The paper
-    averages the RMSEs, not the MSEs. One row per dataset, in the order of
-    `datasets`, and one column per method, in the order of `methods`."""
-    agg = (
-        df.assign(rmse=np.sqrt(df["mse"]))
-        .groupby(["data", "n", "d", "learner"], as_index=False)["rmse"].mean()
-    )
+def table1(df, datasets, methods, value):
+    """Table 1 and the time table: the mean over repetitions of `value` for each
+    dataset and method. One row per dataset, in the order of `datasets`, with
+    its rows used (n) and covariates (d), and one column per method slug, in the
+    order of `methods`; NaN where a method was not run."""
+    agg = df.groupby(["data", "n", "d", "method"], as_index=False)[value].mean()
     tab = (
-        agg.pivot_table(index=["data", "n", "d"], columns="learner", values="rmse")
+        agg.pivot_table(index=["data", "n", "d"], columns="method", values=value)
         .reindex(columns=methods)
         .reset_index()
     )
     tab["data"] = pd.Categorical(tab["data"], categories=datasets, ordered=True)
     return tab.sort_values("data").reset_index(drop=True)
+
+
+def table1_rmse(df, datasets, methods):
+    """Table 1: the mean over repetitions of each fit's test RMSE. The paper
+    averages the RMSEs, not the MSEs."""
+    return table1(df.assign(rmse=np.sqrt(df["mse"])), datasets, methods, "rmse")
+
+
+def table1_time(df, datasets, methods):
+    """The time table: the mean over repetitions of the seconds to tune, fit and
+    predict."""
+    return table1(df.assign(seconds=df["time fitting"] + df["time predicting"]), datasets, methods, "seconds")
 
 
 def convergence(df):
