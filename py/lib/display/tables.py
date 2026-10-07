@@ -57,7 +57,7 @@ def _body(tab, methods, cell, bold_min, names=None):
     for _, r in tab.iterrows():
         present = {m: r[m] for m in methods if m in r and pd.notna(r[m])}
         best = min(present, key=present.get) if bold_min else None
-        row = {"data": str(r["data"]), "$n$": int(r["n"]), "$p$": int(r["d"])}
+        row = {"data": str(r["data"]), "rows": int(r["n"]), "$p$": int(r["d"])}
         for m in methods:
             text = cell(r[m]) if m in present else "---"
             row[_header(m, names)] = rf"\textbf{{{text}}}" if m == best else text

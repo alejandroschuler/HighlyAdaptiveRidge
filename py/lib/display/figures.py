@@ -89,10 +89,12 @@ def dimension_sweep(agg):
 DEPTH_STYLES = [("#2a78d6", "o"), ("#eb6834", "s")]
 
 
-def depth_curves(agg, datasets, methods, names):
+def depth_curves(agg, datasets, methods, names, log_range=10):
     """The depth figure: each method's cross-validated risk at each depth of the
     path, relative to the dataset's best (summaries.depth_curves), one panel per
-    dataset, with the depth on a log scale and a dotted line at 1."""
+    dataset, with the depth on a log scale and a dotted line at 1. A panel whose
+    largest value exceeds `log_range` has its error axis on a log scale too, and
+    its title says so."""
     cols = 4
     rows = -(-(len(datasets) + 1) // cols)
     fig, axes = plt.subplots(rows, cols, figsize=(10, 2.35 * rows))
@@ -106,7 +108,11 @@ def depth_curves(agg, datasets, methods, names):
         ax.axhline(1, color="0.6", lw=0.8, ls=":", zorder=0)
         ax.set_xscale("log", base=2)
         ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:g}"))
-        ax.set_title(f"{data} ($p$ = {p})", fontsize=10)
+        log_y = sub["relative"].max() > log_range
+        if log_y:
+            ax.set_yscale("log")
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _: f"{y:g}"))
+        ax.set_title(f"{data} ($p$ = {p}{', log scale' if log_y else ''})", fontsize=10)
         ax.tick_params(labelsize=8)
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)
