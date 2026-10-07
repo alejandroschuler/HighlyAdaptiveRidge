@@ -33,9 +33,11 @@ TABLES = ["empirical", "runtime"]      # Table 1 (test RMSE) and the fit times
 # Exploratory output. Deliberately not part of `rule all`: a manuscript build
 # should not drag along months of abandoned exploration. These two are the
 # experiments the referee asked for (comment 7 of the first report).
-NOTES_NUMBERS: list[str] = []
-NOTES_FIGURES = ["noise-sweep", "dimension-sweep"]
-NOTES_TABLES: list[str] = []
+NOTES_NUMBERS = ["sobolev-mars", "sobolev-mars-fits"]   # notes/sobolev-mars.tex
+NOTES_FIGURES = ["noise-sweep", "dimension-sweep",
+                 "sobolev-mars-fits"]                  # notes/sobolev-mars.tex
+NOTES_TABLES = ["sobolev-mars-rmse", "sobolev-mars-runtime",
+                "sobolev-mars-ratios"]                 # notes/sobolev-mars.tex
 
 
 def lib(*dirs):
@@ -110,6 +112,47 @@ ESTIMATOR_CODE = {
     "enet": EST_BASE + lib(f"{EST}/enet.py"),
 }
 ESTIMATORS = list(ESTIMATOR_CODE)   # the order of Section 4
+
+# The four estimators that notes/sobolev-mars.tex adds, one module each in
+# py/lib/estimators: kernel ridge with the anchored mixed Sobolev kernels, the
+# limits of HAR and first-order HAR with their depth weights, kernel ridge with
+# the first-order mixed Sobolev kernel of the usual norm, and MARS. They are
+# not in estimators.SLUGS, the paper's list, which every Table 1 fit reads, so
+# their rules run py/more_fits.py, which registers them first. pymars needs a
+# newer scikit-learn than the main environment pins, so the MARS fits run
+# under the interpreter of envs/mars, and they declare its lock file.
+MORE_BASE = lib(f"{EST}/more.py", "py/more_fits.py")
+SOBOLEV = KPATH + lib(f"{EST}/sobolev_kernels.py")
+MORE_CODE = {
+    "anchored_sobolev": SOBOLEV + lib(f"{EST}/depths.py", f"{EST}/anchored_sobolev.py"),
+    "mixed_sobolev1": SOBOLEV + lib(f"{EST}/mixed_sobolev1.py"),
+    "anchored_sobolev1": SOBOLEV + lib(f"{EST}/depths.py", f"{EST}/anchored_sobolev1.py"),
+    "mars": EST_BASE + lib(f"{EST}/depths.py", f"{EST}/mars.py", "envs/mars/pyproject.toml",
+                           "envs/mars/uv.lock"),
+}
+MORE = list(MORE_CODE)
+MARS_PYTHON = "envs/mars/.venv/bin/python"
+
+# The estimators that the note added second, at the user's request: the
+# usual-norm mixed Sobolev kernels with HAR's depth weights, of orders 0 and 1,
+# so that the comparison of the anchored and the usual-norm kernels is not
+# also one of depth tuning. They have their own registry and fit script
+# (py/added_fits.py), so that the fits of MORE, which read estimators/more.py
+# and py/more_fits.py, do not rerun.
+DEPTH_BASE = lib(f"{EST}/more_depth.py", "py/added_fits.py")
+DEPTH_SOBOLEV = SOBOLEV + lib(f"{EST}/sobolev_depth.py", f"{EST}/depths.py")
+DEPTH_CODE = {
+    "mixed_sobolev_depth": DEPTH_SOBOLEV + lib(f"{EST}/mixed_sobolev_depth.py"),
+    "mixed_sobolev1_depth": DEPTH_SOBOLEV + lib(f"{EST}/mixed_sobolev1_depth.py"),
+}
+DEPTH = list(DEPTH_CODE)
+
+# The note's columns and panels: each HAR next to its limit kernel and the two
+# kernels of the usual norm, with and without depth, then the other estimators
+# in the order of Section 4.
+SM_METHODS = ["har", "anchored_sobolev", "mixed_sobolev_depth", "mixed_sobolev",
+              "har1", "anchored_sobolev1", "mixed_sobolev1_depth", "mixed_sobolev1",
+              "rbf", "hal", "mars", "rf", "gbt", "mlp", "enet"]
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +281,7 @@ rule table1_fit:
         result="results/table1/{dataset}/{method}/rep{rep}.csv",
         tuning="results/table1/{dataset}/{method}/rep{rep}-tuning.csv",
     wildcard_constraints:
-        method="(?!har1)[a-z0-9_]+",
+        method="|".join(m for m in ESTIMATORS if m != "har1"),
     threads: 1
     script: "py/table1_fit.py"
 
@@ -292,6 +335,8 @@ rule sim_fits:
         helpers=lambda wc: ESTIMATOR_CODE[wc.method] + DEMO,
     output:
         "results/fits/{method}.csv",
+    wildcard_constraints:
+        method="|".join(ESTIMATORS),
     threads: 1
     script: "py/sim_fits.py"
 
@@ -361,3 +406,111 @@ rule fig_dimension_sweep:
     output:
         f"{NOTES}/figures/dimension-sweep.pdf",
     script: "py/fig_dimension_sweep.py"
+
+
+# ---------------------------------------------------------------------------
+# notes/sobolev-mars.tex: Table 1, the time table and Figure 1 with the four
+# added estimators (MORE) next to the nine of Section 4. The added fits are
+# jobs of the same shape as the paper's, on one thread each, and they write
+# results/ in the same layout, so the note's displays read the paper's fits as
+# they stand.
+
+SM_FITS = TABLE1_FITS + [(d, m) for d in TABLE1_DATASETS for m in MORE + DEPTH]
+
+
+def sm_files(kind):
+    """The result or tuning file of every fit that the note's tables read."""
+    suffix = "" if kind == "result" else "-tuning"
+    return [f"results/table1/{d}/{m}/rep{r}{suffix}.csv" for d, m in SM_FITS for r in TABLE1_REPS]
+
+
+def _more_python(wc):
+    """The interpreter of an added estimator's fits."""
+    return MARS_PYTHON if wc.method == "mars" else sys.executable
+
+
+rule table1_fit_more:
+    input:
+        data=f"{DATA}/{{dataset}}.csv",
+        helpers=lambda wc: MORE_CODE[wc.method] + MORE_BASE + TABLE1_FIT,
+    output:
+        result="results/table1/{dataset}/{method}/rep{rep}.csv",
+        tuning="results/table1/{dataset}/{method}/rep{rep}-tuning.csv",
+    wildcard_constraints:
+        method="|".join(MORE),
+    params:
+        python=_more_python,
+    threads: 1
+    shell:
+        "{params.python} py/more_fits.py table1 {input.data} {wildcards.dataset} {wildcards.method}"
+        " {wildcards.rep} {output.result} {output.tuning}"
+
+
+rule sim_fits_more:
+    input:
+        helpers=lambda wc: MORE_CODE[wc.method] + MORE_BASE + DEMO,
+    output:
+        "results/fits/{method}.csv",
+    wildcard_constraints:
+        method="|".join(MORE),
+    params:
+        python=_more_python,
+    threads: 1
+    shell:
+        "{params.python} py/more_fits.py fits {wildcards.method} {output}"
+
+
+rule table1_fit_depth:
+    input:
+        data=f"{DATA}/{{dataset}}.csv",
+        helpers=lambda wc: DEPTH_CODE[wc.method] + DEPTH_BASE + TABLE1_FIT,
+    output:
+        result="results/table1/{dataset}/{method}/rep{rep}.csv",
+        tuning="results/table1/{dataset}/{method}/rep{rep}-tuning.csv",
+    wildcard_constraints:
+        method="|".join(DEPTH),
+    threads: 1
+    shell:
+        f"{sys.executable} py/added_fits.py more_depth table1 {{input.data}} {{wildcards.dataset}}"
+        " {wildcards.method} {wildcards.rep} {output.result} {output.tuning}"
+
+
+rule sim_fits_depth:
+    input:
+        helpers=lambda wc: DEPTH_CODE[wc.method] + DEPTH_BASE + DEMO,
+    output:
+        "results/fits/{method}.csv",
+    wildcard_constraints:
+        method="|".join(DEPTH),
+    threads: 1
+    shell:
+        f"{sys.executable} py/added_fits.py more_depth fits {{wildcards.method}} {{output}}"
+
+
+rule sm_tables:
+    input:
+        results=sm_files("result"),
+        tunings=sm_files("tuning"),
+        helpers=DISPLAY,
+    output:
+        rmse=f"{NOTES}/tables/sobolev-mars-rmse.tex",
+        runtime=f"{NOTES}/tables/sobolev-mars-runtime.tex",
+        ratios=f"{NOTES}/tables/sobolev-mars-ratios.tex",
+        numbers=f"{NOTES}/numbers/sobolev-mars.tex",
+    params:
+        datasets=TABLE1_DATASETS,
+        methods=SM_METHODS,
+        added=MORE + DEPTH,
+    script: "py/sm_tables.py"
+
+
+rule sm_fig_fits:
+    input:
+        predictions=expand("results/fits/{method}.csv", method=SM_METHODS),
+        helpers=DISPLAY,
+    output:
+        figure=f"{NOTES}/figures/sobolev-mars-fits.pdf",
+        numbers=f"{NOTES}/numbers/sobolev-mars-fits.tex",
+    params:
+        methods=SM_METHODS,
+    script: "py/sm_fig_fits.py"

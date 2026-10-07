@@ -1,0 +1,24 @@
+[project]
+name = "har-mars"
+version = "0.1.0"
+description = "The environment of the MARS fits in notes/sobolev-mars.tex"
+requires-python = "==3.12.*"
+# pymars needs scikit-learn 1.6 or later (validate_data and __sklearn_tags__),
+# and the main environment pins scikit-learn 1.5.1 so that the fits of Table 1
+# reproduce. So the MARS fits run in this environment, with the main
+# environment's versions of everything else that the fit code imports.
+# scikit-learn is the oldest release that pymars accepts, and pymars is pinned
+# to a commit of its repository.
+dependencies = [
+    "joblib==1.4.2",
+    "mars-earth @ git+https://github.com/alejandroschuler/mars@a0ddca9caecbfaf6c40ae90ba2e362b838e930af",
+    "numpy==2.0.1",
+    "pandas==2.2.2",
+    "scikit-learn==1.6.1",
+    "scipy==1.14.1",
+    "threadpoolctl==3.5.0",
+]
+
+[tool.uv]
+# The code is not installed as a package. The Snakefile puts py/lib on the path.
+package = false

@@ -45,3 +45,27 @@ def dimension(df):
     agg = df.groupby(["dgp", "p", "learner"], as_index=False)["mse"].mean()
     agg["rmse"] = np.sqrt(agg["mse"])
     return agg
+
+
+def table1_ratios(df, datasets, contrasts):
+    """For each dataset and each contrast (a, b) of two method slugs: the ratio of
+    a's mean test RMSE over the repetitions to b's, and the number of
+    repetitions in which a's RMSE is the smaller. One row per dataset, in the
+    order of `datasets`, with columns (a, b, "ratio") and (a, b, "wins"); NaN
+    where a method was not run."""
+    rmse = df.assign(rmse=np.sqrt(df["mse"])).pivot_table(index=["data", "n", "d", "rep"], columns="method",
+                                                          values="rmse")
+    rows = []
+    for (data, n, d), g in rmse.groupby(level=["data", "n", "d"]):
+        row = {"data": data, "n": n, "d": d}
+        for a, b in contrasts:
+            if a in g and b in g and g[a].notna().all() and g[b].notna().all():
+                row[(a, b, "ratio")] = g[a].mean() / g[b].mean()
+                row[(a, b, "wins")] = int((g[a] < g[b]).sum())
+            else:
+                row[(a, b, "ratio")] = np.nan
+                row[(a, b, "wins")] = np.nan
+        rows.append(row)
+    tab = pd.DataFrame(rows)
+    tab["data"] = pd.Categorical(tab["data"], categories=datasets, ordered=True)
+    return tab.sort_values("data").reset_index(drop=True)

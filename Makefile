@@ -8,6 +8,7 @@
 #
 #   make wip TOPIC=overlap   start wip/overlap off main (BASE=<branch> to change)
 #   make notes               exploratory artefacts, on a wip branch
+#                            (NOTES_TARGETS=<files> builds only those)
 #   make build               manuscript artefacts, on main only
 #                            (BUILD_TARGETS=<files> builds only those,
 #                            SNAKEMAKE_FLAGS=--keep-going keeps going past a failed job)
@@ -58,6 +59,8 @@ BASE ?= $(MAIN)
 LATEXMK_ENGINE ?= -pdf
 # What `make build` builds: every paper artefact, or the files named here.
 BUILD_TARGETS ?= all
+# What `make notes` builds: every notes artefact, or the files named here.
+NOTES_TARGETS ?= notes
 # Extra Snakemake flags for `make build`, such as --keep-going for a long run.
 SNAKEMAKE_FLAGS ?=
 # What the tooling writes inside the paper repo. push-paper commits these, and
@@ -95,7 +98,7 @@ $(ENV_STAMP): pyproject.toml uv.lock
 
 notes: $(ENV_STAMP)
 	@$(PY) $(TOOLS)/build_guard.py --tier notes
-	@$(SNAKEMAKE) notes --cores $(CORES) --keep-going --config tier=notes
+	@$(SNAKEMAKE) $(NOTES_TARGETS) --cores $(CORES) --keep-going --config tier=notes
 
 build: $(ENV_STAMP)
 	@$(PY) $(TOOLS)/build_guard.py --tier paper

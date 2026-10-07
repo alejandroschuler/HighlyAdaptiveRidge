@@ -12,6 +12,13 @@ HEADERS = {
     "gbt": r"\makecell{Gradient\\Boosted\\Trees}",
     "mlp": "MLP",
     "enet": r"\makecell{Elastic\\Net}",
+    # the estimators that notes/sobolev-mars.tex adds
+    "anchored_sobolev": r"\makecell{Anchored\\Mixed\\Sobolev\\KRR}",
+    "mixed_sobolev1": r"\makecell{1st-order\\Mixed\\Sobolev\\KRR}",
+    "anchored_sobolev1": r"\makecell{1st-order\\Anchored\\Mixed\\Sobolev\\KRR}",
+    "mars": "MARS",
+    "mixed_sobolev_depth": r"\makecell{Mixed\\Sobolev\\KRR\\with depth}",
+    "mixed_sobolev1_depth": r"\makecell{1st-order\\Mixed\\Sobolev\\KRR\\with depth}",
 }
 
 
@@ -51,3 +58,18 @@ def empirical(tab, methods):
 def runtime(tab, methods):
     """The body of the time table: mean seconds, --- where a method was not run."""
     return _body(tab, methods, seconds_cell, bold_min=False)
+
+
+def ratios(tab, contrasts, headers):
+    """The body of the note's ratio table: for each dataset and contrast (a, b),
+    the ratio of a's mean RMSE to b's and, in parentheses, the repetitions in
+    which a's RMSE is the smaller; --- where a method was not run. `headers`
+    gives each contrast's column header."""
+    rows = []
+    for _, r in tab.iterrows():
+        row = {"data": str(r["data"]), "$n$": int(r["n"]), "$p$": int(r["d"])}
+        for (a, b), head in zip(contrasts, headers):
+            ratio, wins = r[(a, b, "ratio")], r[(a, b, "wins")]
+            row[head] = "---" if pd.isna(ratio) else f"{ratio:.2f} ({int(wins)})"
+        rows.append(row)
+    return pd.DataFrame(rows)
