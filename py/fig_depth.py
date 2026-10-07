@@ -32,6 +32,11 @@ def summary(method):
     return below, worst, worst_data
 
 
+def ratio(x):
+    """A ratio, to one decimal below 100 and to a whole number from 100 up."""
+    return art.num(x, 0 if x >= 100 else 1)
+
+
 har_below, har_worst, har_worst_data = summary("har")
 ms_below, ms_worst, ms_worst_data = summary("mixed_sobolev_depth")
 art.emit_numbers(
@@ -40,8 +45,8 @@ art.emit_numbers(
     resDepthNData=art.int(df["data"].nunique()),
     resDepthBelowHar=art.int(har_below),
     resDepthBelowMs=art.int(ms_below),
-    resDepthFullHar=art.num(har_worst, 1),
+    resDepthFullHar=ratio(har_worst),
     resDepthFullHarData=art.text(har_worst_data),
-    resDepthFullMs=art.num(ms_worst, 1),
+    resDepthFullMs=ratio(ms_worst),
     resDepthFullMsData=art.text(ms_worst_data),
 )
