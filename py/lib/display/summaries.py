@@ -24,6 +24,28 @@ def table1_rmse(df, datasets, methods):
     return table1(df.assign(rmse=np.sqrt(df["mse"])), datasets, methods, "rmse")
 
 
+def table1_relative_mse(df, datasets, methods):
+    """Table 1: the mean over repetitions of each fit's test MSE, divided by the
+    smallest such mean among `methods` on the same dataset, so that the best
+    method of each row has the value 1."""
+    tab = table1(df, datasets, methods, "mse")
+    tab[methods] = tab[methods].div(tab[methods].min(axis=1), axis=0)
+    return tab
+
+
+def depth_curves(df, datasets):
+    """The depth figure: the mean over repetitions of the cross-validated risk of
+    each method at each depth, divided by the smallest such mean on the same
+    dataset over all the methods and depths, so that the best point of each
+    dataset has the value 1. One row per dataset, method and depth, with `full`
+    true at the full depth p."""
+    agg = df.groupby(["data", "n", "d", "method", "depth"], as_index=False)["cv_risk"].mean()
+    agg["relative"] = agg["cv_risk"] / agg.groupby("data")["cv_risk"].transform("min")
+    agg["full"] = agg["depth"] >= agg["d"]
+    agg["data"] = pd.Categorical(agg["data"], categories=datasets, ordered=True)
+    return agg.sort_values(["data", "method", "depth"]).reset_index(drop=True)
+
+
 def table1_time(df, datasets, methods):
     """The time table: the mean over repetitions of the seconds to tune, fit and
     predict."""

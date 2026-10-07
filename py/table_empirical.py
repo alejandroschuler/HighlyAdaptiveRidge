@@ -1,7 +1,10 @@
-"""Table 1 (tab:empirical) and the time table (tab:runtime): each estimator's test
-RMSE and its time to tune, fit and predict, on each dataset, averaged over the
-repetitions. The numbers file holds the settings of the estimators and of the
-benchmark, read from the stored fits."""
+"""Table 1 (tab:empirical) and the time table (tab:runtime), for the estimators
+of the main text, and the same two tables for all the estimators, in the
+appendix (tab:empirical-full, tab:runtime-full). Table 1 gives each
+estimator's mean test MSE over the repetitions as a multiple of the smallest in
+its row, and the time table its mean time to tune, fit and predict. The
+numbers file holds the settings of the estimators and of the benchmark, read
+from the stored fits."""
 import json
 import math
 
@@ -15,13 +18,23 @@ results = pd.concat([pd.read_csv(art.track_read(p)) for p in snakemake.input.res
 for p in snakemake.input.tunings:
     art.track_read(p)
 methods = list(snakemake.params.methods)
+main = list(snakemake.params.main)
+names = dict(snakemake.params.names)
 datasets = list(snakemake.params.datasets)
-column_format = "lrr|" + "l" * len(methods)
 
-art.save_table(snakemake.output.rmse, tables.empirical(summaries.table1_rmse(results, datasets, methods), methods),
-               label="tab:empirical", escape=False, column_format=column_format)
-art.save_table(snakemake.output.runtime, tables.runtime(summaries.table1_time(results, datasets, methods), methods),
-               label="tab:runtime", escape=False, column_format=column_format)
+
+def save_tables(mse_path, runtime_path, shown, suffix):
+    """Table 1 and the time table for the estimators `shown`, labelled tab:empirical
+    and tab:runtime plus `suffix`."""
+    column_format = "lrr|" + "l" * len(shown)
+    rel = tables.relative(summaries.table1_relative_mse(results, datasets, shown), shown, names)
+    art.save_table(mse_path, rel, label=f"tab:empirical{suffix}", escape=False, column_format=column_format)
+    time = tables.runtime(summaries.table1_time(results, datasets, shown), shown, names)
+    art.save_table(runtime_path, time, label=f"tab:runtime{suffix}", escape=False, column_format=column_format)
+
+
+save_tables(snakemake.output.mse, snakemake.output.runtime, main, "")
+save_tables(snakemake.output.mse_full, snakemake.output.runtime_full, methods, "-full")
 
 
 def one(method, column):
@@ -30,6 +43,15 @@ def one(method, column):
     if len(values) != 1:
         raise ValueError(f"{method}: {column} took the values {list(values)}, not one")
     return values[0]
+
+
+def same(column, *methods):
+    """The single value of a setting that every fit of these estimators recorded,
+    for a macro that the text uses for all of them."""
+    values = {one(m, column) for m in methods}
+    if len(values) != 1:
+        raise ValueError(f"{column} differs among {methods}: {values}")
+    return values.pop()
 
 
 def one_list(method, column):
@@ -79,10 +101,13 @@ art.emit_numbers(
     mthKrrNAlphas=art.int(one("har", "n_alphas")),
     mthKrrEps=power10(one("har", "eps")),
     mthKrrFloor=power10(round(float(np.median(results.loc[results["method"] == "har", "chosen_alpha_floor_ratio"])), 15)),
-    # HAR and first-order HAR
+    # HAR, mixed Sobolev KRR and MARS walk the same depth path with the same
+    # patience, and the first-order kernels have the same time budget
     mthHarDepths=art.numlist([int(d) for d in har_path[:-1]]),
-    mthDepthPatience=art.int(one("har", "patience")),
-    mthHarOneBudget=minutes(one("har1", "budget")),
+    mthDepthPatience=art.int(same("patience", "har", "har1", "mixed_sobolev_depth", "mixed_sobolev1_depth", "mars")),
+    mthHarOneBudget=minutes(same("budget", "har1", "mixed_sobolev1_depth")),
+    # MARS
+    mthMarsMaxTerms=art.int(one("mars", "max_terms")),
     # radial basis KRR: gamma = 2^k / p
     mthRbfScaleMin=art.int(round(math.log2(min(scales)))),
     mthRbfScaleMax=art.int(round(math.log2(max(scales)))),

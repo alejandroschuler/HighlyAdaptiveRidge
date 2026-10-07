@@ -26,9 +26,13 @@ os.environ["PYTHONPATH"] = os.pathsep.join(
 # as the registry.
 NUMBERS = ["kernel-scale",             # the scale of the plain HAR kernel matrix
            "empirical",                # the settings of the estimators and of Table 1
-           "fits"]                     # the settings of Figure 1
-FIGURES = ["fits", "convergence"]      # Figures 1 and 2
-TABLES = ["empirical", "runtime"]      # Table 1 (test RMSE) and the fit times
+           "fits",                     # the settings of Figure 1
+           "depth"]                    # the settings of the depth figure
+FIGURES = ["fits", "convergence",      # Figures 1 and 2
+           "depth"]                    # cross-validated error against the depth
+TABLES = ["empirical", "runtime",      # Table 1 (relative test MSE) and the fit times
+          "empirical-full",            # the same two tables in the appendix, with
+          "runtime-full"]              # the additional comparators
 
 # Exploratory output. Deliberately not part of `rule all`: a manuscript build
 # should not drag along months of abandoned exploration. These two are the
@@ -154,6 +158,18 @@ SM_METHODS = ["har", "anchored_sobolev", "mixed_sobolev_depth", "mixed_sobolev",
               "har1", "anchored_sobolev1", "mixed_sobolev1_depth", "mixed_sobolev1",
               "rbf", "hal", "mars", "rf", "gbt", "mlp", "enet"]
 
+# The paper's Section 4: the estimators of the main text, in its order, and all
+# of them with the additional comparators of the appendix ("Additional
+# Empirical Results"), with each method next to its first-order version and the
+# methods of one kind together. Mixed Sobolev KRR is the version with depth
+# tuning; the plain kernel (mixed_sobolev) is no longer in the paper.
+PAPER_MAIN = ["har", "mixed_sobolev_depth", "rbf", "hal", "rf", "enet"]
+PAPER_ALL = ["har", "har1", "mixed_sobolev_depth", "mixed_sobolev1_depth", "rbf", "hal", "mars",
+             "rf", "gbt", "mlp", "enet"]
+# The paper's names for the estimators whose module names them otherwise.
+PAPER_NAMES = {"mixed_sobolev_depth": "Mixed Sobolev KRR",
+               "mixed_sobolev1_depth": "1st-order Mixed Sobolev KRR"}
+
 
 # ---------------------------------------------------------------------------
 # The design: which cells exist. The settings inside a cell (seeds, splits,
@@ -171,13 +187,22 @@ TABLE1_REPS = list(range(5))
 # covariates. A first-order HAR kernel on slice takes minutes to build on one
 # core, so even its first depth would take the fit far past its time budget.
 TABLE1_SKIP = {("yearmsd", "hal"), ("slice", "hal"), ("slice", "har1")}
-TABLE1_FITS = [(d, m) for d in TABLE1_DATASETS for m in ESTIMATORS if (d, m) not in TABLE1_SKIP]
 
 
-def table1_files(kind):
-    """The result or tuning file of every Table 1 fit."""
+def fits_of(methods):
+    """The (dataset, method) cells of Table 1 for these methods, less the skipped ones."""
+    return [(d, m) for d in TABLE1_DATASETS for m in methods if (d, m) not in TABLE1_SKIP]
+
+
+TABLE1_FITS = fits_of(ESTIMATORS)   # the nine estimators fit first; the note reads these
+PAPER_FITS = fits_of(PAPER_ALL)     # what the paper's tables read
+
+
+def table1_files(kind, cells=None):
+    """The result or tuning file of every Table 1 fit of these cells (default: the paper's)."""
     suffix = "" if kind == "result" else "-tuning"
-    return [f"results/table1/{d}/{m}/rep{r}{suffix}.csv" for d, m in TABLE1_FITS for r in TABLE1_REPS]
+    cells = PAPER_FITS if cells is None else cells
+    return [f"results/table1/{d}/{m}/rep{r}{suffix}.csv" for d, m in cells for r in TABLE1_REPS]
 
 # Figure 2 and the noise sweep are one simulation over (sigma, n).
 CONVERGENCE_N = [50, 125, 200, 300, 400, 600]
@@ -299,13 +324,69 @@ rule table_empirical:
         tunings=table1_files("tuning"),
         helpers=DISPLAY,
     output:
-        rmse=f"{ART}/tables/empirical.tex",
+        mse=f"{ART}/tables/empirical.tex",
         runtime=f"{ART}/tables/runtime.tex",
+        mse_full=f"{ART}/tables/empirical-full.tex",
+        runtime_full=f"{ART}/tables/runtime-full.tex",
         numbers=f"{ART}/numbers/empirical.tex",
     params:
         datasets=TABLE1_DATASETS,
-        methods=ESTIMATORS,
+        main=PAPER_MAIN,
+        methods=PAPER_ALL,
+        names=PAPER_NAMES,
     script: "py/table_empirical.py"
+
+
+# ---------------------------------------------------------------------------
+# The depth figure (fig:depth): the cross-validated error of HAR and of mixed
+# Sobolev KRR at every depth of the depth path, with no early stopping, on the
+# training part and the folds of each Table 1 fit. One job per dataset, method
+# and repetition, on one thread. It fits the estimator's own code with its
+# patience removed, so each curve is the one that the early-stopped walk of the
+# Table 1 fit follows until it stops.
+
+DEPTH_CURVE_METHODS = ["har", "mixed_sobolev_depth"]
+DEPTH_CURVE_CODE = {
+    "har": ESTIMATOR_CODE["har"],
+    "mixed_sobolev_depth": DEPTH_CODE["mixed_sobolev_depth"],
+}
+
+
+rule depth_curve:
+    input:
+        data=f"{DATA}/{{dataset}}.csv",
+        helpers=lambda wc: DEPTH_CURVE_CODE[wc.method] + lib(f"{EST}/more_depth.py") + TABLE1_FIT,
+    output:
+        "results/depth/{dataset}/{method}/rep{rep}.csv",
+    wildcard_constraints:
+        method="|".join(DEPTH_CURVE_METHODS),
+    threads: 1
+    script: "py/depth_curve.py"
+
+
+# The curves of the two widest datasets take the longest, so their jobs start first.
+use rule depth_curve as depth_curve_wide with:
+    wildcard_constraints:
+        dataset="slice|yearmsd",
+        method="|".join(DEPTH_CURVE_METHODS),
+    priority: 10
+
+ruleorder: depth_curve_wide > depth_curve
+
+
+rule fig_depth:
+    input:
+        curves=expand("results/depth/{dataset}/{method}/rep{rep}.csv", dataset=TABLE1_DATASETS,
+                      method=DEPTH_CURVE_METHODS, rep=TABLE1_REPS),
+        helpers=DISPLAY,
+    output:
+        figure=f"{ART}/figures/depth.pdf",
+        numbers=f"{ART}/numbers/depth.tex",
+    params:
+        datasets=TABLE1_DATASETS,
+        methods=DEPTH_CURVE_METHODS,
+        names=PAPER_NAMES,
+    script: "py/fig_depth.py"
 
 
 # ---------------------------------------------------------------------------
@@ -327,8 +408,8 @@ rule kernel_scale:
 
 
 # ---------------------------------------------------------------------------
-# Figure 1 (fig:fits): the fits of the nine estimators on one-dimensional data.
-# Each estimator is one job.
+# Figure 1 (fig:fits): the fits of the estimators of the main text on
+# one-dimensional data. Each estimator is one job.
 
 rule sim_fits:
     input:
@@ -343,13 +424,14 @@ rule sim_fits:
 
 rule fig_fits:
     input:
-        predictions=expand("results/fits/{method}.csv", method=ESTIMATORS),
+        predictions=expand("results/fits/{method}.csv", method=PAPER_MAIN),
         helpers=DISPLAY,
     output:
         figure=f"{ART}/figures/fits.pdf",
         numbers=f"{ART}/numbers/fits.tex",
     params:
-        methods=ESTIMATORS,
+        methods=PAPER_MAIN,
+        names=PAPER_NAMES,
     script: "py/fig_fits.py"
 
 

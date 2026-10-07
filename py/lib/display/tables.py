@@ -36,7 +36,23 @@ def seconds_cell(x):
     return f"{float(f'{x:.2g}'):g}"
 
 
-def _body(tab, methods, cell, bold_min):
+def ratio_cell(x):
+    """Three significant digits, and whole numbers from 100 up: 1.00, 1.23, 12.3, 123."""
+    if x >= 100:
+        return f"{x:.0f}"
+    return f"{x:.1f}" if x >= 10 else f"{x:.2f}"
+
+
+def _header(m, names):
+    """A column header: the paper's name for the method if `names` has one, a
+    word to a line as in HEADERS, else the header of HEADERS."""
+    if m not in (names or {}):
+        return HEADERS[m]
+    words = names[m].split()
+    return r"\makecell{" + r"\\".join(words) + "}" if len(words) > 1 else words[0]
+
+
+def _body(tab, methods, cell, bold_min, names=None):
     rows = []
     for _, r in tab.iterrows():
         present = {m: r[m] for m in methods if m in r and pd.notna(r[m])}
@@ -44,20 +60,27 @@ def _body(tab, methods, cell, bold_min):
         row = {"data": str(r["data"]), "$n$": int(r["n"]), "$p$": int(r["d"])}
         for m in methods:
             text = cell(r[m]) if m in present else "---"
-            row[HEADERS[m]] = rf"\textbf{{{text}}}" if m == best else text
+            row[_header(m, names)] = rf"\textbf{{{text}}}" if m == best else text
         rows.append(row)
     return pd.DataFrame(rows)
 
 
-def empirical(tab, methods):
-    """The body of Table 1: one row per dataset, the lowest RMSE of each row in
-    bold, and --- where a method was not run."""
-    return _body(tab, methods, rmse_cell, bold_min=True)
+def empirical(tab, methods, names=None):
+    """The body of the note's RMSE table: one row per dataset, the lowest RMSE of
+    each row in bold, and --- where a method was not run."""
+    return _body(tab, methods, rmse_cell, bold_min=True, names=names)
 
 
-def runtime(tab, methods):
+def relative(tab, methods, names=None):
+    """The body of Table 1: one row per dataset, each method's test MSE as a
+    multiple of the row's smallest, which is in bold, and --- where a method was
+    not run."""
+    return _body(tab, methods, ratio_cell, bold_min=True, names=names)
+
+
+def runtime(tab, methods, names=None):
     """The body of the time table: mean seconds, --- where a method was not run."""
-    return _body(tab, methods, seconds_cell, bold_min=False)
+    return _body(tab, methods, seconds_cell, bold_min=False, names=names)
 
 
 def ratios(tab, contrasts, headers):
