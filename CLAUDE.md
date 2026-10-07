@@ -105,16 +105,24 @@ repair for each state. Load it when a task needs more than these rules.
   script with `PYTHONPATH=py/lib .venv/bin/python scratch/<script>.py`.
 - `data/uci` is a link to `../../csv`, the UCI files that other projects share.
   See `data/README.md`.
-- Table 1 (`tab:empirical`) and its time table (`tab:runtime`) are 480 fits:
-  nine estimators, one module each in `py/lib/estimators/`, on eleven datasets
-  and five repetitions. Each fit is one Snakemake job on one thread, so that
-  the times compare, and the Snakefile runs every job on one thread. The full
-  run took about three and a half hours with `CORES=6` in October 2026. HAL and
-  first-order HAR stop their depth walks on a 20-minute budget per fit, but a
-  first depth always runs: HAL's first depth on naval takes about an hour. Each fit rule declares only
-  its estimator's code, so an edit to one estimator reruns only its fits. Keep
-  it that way. Run the fits with fewer jobs than free cores (other sessions
-  share this machine), and with `SNAKEMAKE_FLAGS=--keep-going`.
+- Section 4 has six estimators in the main text (`PAPER_MAIN` in the
+  Snakefile: Table 1 `tab:empirical`, the time table `tab:runtime`, Figure 1)
+  and eleven in appendix A4 (`PAPER_ALL`: `tab:empirical-full`,
+  `tab:runtime-full`), on eleven datasets and five repetitions. Table 1 gives
+  the mean test MSE as a multiple of the row's best. Each fit is one Snakemake
+  job on one thread, so that the times compare, and the Snakefile runs every
+  job on one thread. HAL, first-order HAR and first-order mixed Sobolev KRR stop
+  their depth walks on a 20-minute budget per fit, but a first depth always
+  runs: HAL's first depth on naval takes about an hour. Each fit rule declares
+  only its estimator's code, so an edit to one estimator reruns only its fits.
+  Keep it that way. Every fit reads `estimators/__init__.py`, so the estimators
+  added in October 2026 (mixed Sobolev KRR with depth, its first-order version,
+  MARS) are registered by `estimators/more.py` and `estimators/more_depth.py`
+  instead, and MARS runs in `envs/mars` (pymars needs scikit-learn 1.6). The
+  depth figure (`fig:depth`) is 110 more jobs (`results/depth/`). Run the fits
+  with fewer jobs than free cores (other sessions share this machine), with
+  `SNAKEMAKE_FLAGS=--keep-going`, and with `BUILD_TARGETS` naming the paper's
+  artefacts, since the unused convergence figure has no results on disk.
 - `make test` has no known failures. On a branch without the LOOCV fix of
   October 2026, `test_LOOCV_for_HAR_vs_kernel_HAR[data9]` fails, a degenerate
   case (n = 3, d = 16, pure noise).
