@@ -32,7 +32,7 @@ def summary(method):
     return below, worst, worst_data
 
 
-def ratio(x):
+def ratio_text(x):
     """A ratio, to one decimal below 100 and to a whole number from 100 up."""
     return art.num(x, 0 if x >= 100 else 1)
 
@@ -45,8 +45,8 @@ art.emit_numbers(
     resDepthNData=art.int(df["data"].nunique()),
     resDepthBelowHar=art.int(har_below),
     resDepthBelowMs=art.int(ms_below),
-    resDepthFullHar=ratio(har_worst),
+    resDepthFullHar=ratio_text(har_worst),
     resDepthFullHarData=art.text(har_worst_data),
-    resDepthFullMs=ratio(ms_worst),
+    resDepthFullMs=ratio_text(ms_worst),
     resDepthFullMsData=art.text(ms_worst_data),
 )
