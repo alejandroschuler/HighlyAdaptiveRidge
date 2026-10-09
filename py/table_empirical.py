@@ -102,10 +102,9 @@ art.emit_numbers(
     mthKrrEps=power10(one("har", "eps")),
     mthKrrFloor=power10(round(float(np.median(results.loc[results["method"] == "har", "chosen_alpha_floor_ratio"])), 15)),
     # HAR, mixed Sobolev KRR and MARS walk the same depth path with the same
-    # patience, and the first-order kernels have the same time budget
+    # patience
     mthHarDepths=art.numlist([int(d) for d in har_path[:-1]]),
-    mthDepthPatience=art.int(same("patience", "har", "har1", "mixed_sobolev_depth", "mixed_sobolev1_depth", "mars")),
-    mthHarOneBudget=minutes(same("budget", "har1", "mixed_sobolev1_depth")),
+    mthDepthPatience=art.int(same("patience", "har", "mixed_sobolev_depth", "mars")),
     # MARS
     mthMarsMaxTerms=art.int(one("mars", "max_terms")),
     # radial basis KRR: gamma = 2^k / p

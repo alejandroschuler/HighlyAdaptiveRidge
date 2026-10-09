@@ -107,9 +107,12 @@ repair for each state. Load it when a task needs more than these rules.
   See `data/README.md`.
 - Section 4 has six estimators in the main text (`PAPER_MAIN` in the
   Snakefile: Table 1 `tab:empirical`, the time table `tab:runtime`, Figure 1)
-  and eleven in appendix A4 (`PAPER_ALL`: `tab:empirical-full`,
+  and nine in appendix A4 (`PAPER_ALL`: `tab:empirical-full`,
   `tab:runtime-full`), on eleven datasets and five repetitions. Table 1 gives
-  the mean test MSE as a multiple of the row's best. Each fit is one Snakemake
+  the mean test MSE as a multiple of the row's best. Higher-order HAR left the
+  paper in October 2026: first-order HAR (`har1`) and first-order mixed Sobolev
+  KRR (`mixed_sobolev1_depth`) are still fit, for the full tables of
+  `paper/notes/higher-order-har.tex`. Each fit is one Snakemake
   job on one thread, so that the times compare, and the Snakefile runs every
   job on one thread. HAL, first-order HAR and first-order mixed Sobolev KRR stop
   their depth walks on a 20-minute budget per fit, but a first depth always
