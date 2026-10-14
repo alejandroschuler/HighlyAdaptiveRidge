@@ -107,7 +107,7 @@ repair for each state. Load it when a task needs more than these rules.
   See `data/README.md`.
 - Section 4 has six estimators in the main text (`PAPER_MAIN` in the
   Snakefile: Table 1 `tab:empirical`, the time table `tab:runtime`, Figure 1)
-  and nine in appendix A4 (`PAPER_ALL`: `tab:empirical-full`,
+  and nine in appendix C (`PAPER_ALL`: `tab:empirical-full`,
   `tab:runtime-full`), on eleven datasets and five repetitions. Table 1 gives
   the mean test MSE as a multiple of the row's best. Higher-order HAR left the
   paper in October 2026: first-order HAR (`har1`) and first-order mixed Sobolev
