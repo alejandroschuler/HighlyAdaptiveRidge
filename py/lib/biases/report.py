@@ -38,7 +38,7 @@ def table(results, dgps, methods, header):
     rows = []
     for d in dgps:
         best = min(methods, key=lambda k: m[(d, k)])
-        row = {"Claim": CLAIMS[d], "DGP": DGP_NAMES[d]}
+        row = {"Claim": CLAIMS[d], "Process": DGP_NAMES[d]}
         for k in methods:
             text = pct_cell(m[(d, k)])
             row[header(k)] = rf"\textbf{{{text}}}" if k == best else text
