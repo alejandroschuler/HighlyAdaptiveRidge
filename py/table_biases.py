@@ -11,8 +11,7 @@ from biases import dgps, report, summary, variants
 from display import tables
 
 frames = [pd.read_csv(art.track_read(p)) for p in snakemake.input.results]
-for p in snakemake.input.tunings:
-    art.track_read(p)
+tuning = pd.concat([pd.read_csv(art.track_read(p)) for p in snakemake.input.tunings], ignore_index=True)
 allres = pd.concat(frames, ignore_index=True)
 dgp_list = list(snakemake.params.dgps)
 methods = list(snakemake.params.methods)
@@ -129,7 +128,29 @@ for d, word in zip(["wave3", "wave4"], ["Three", "Four"]):
     numbers[f"resBiasRbfMse{word}"] = pct(m.loc[(d, "rbf"), "mean"])
 numbers["mthBiasFreqReps"] = art.int(len(check_reps))
 numbers["mthBiasCheckPeriods"] = art.numlist(dgps.CHECK_PERIODS)
-numbers["resBiasGbtDeepTopShare"] = art.pct(100 * float(np.mean(deep["chosen_depth"] == max(variants.DEEP_DEPTHS))), 0)
+numbers["resBiasGbtDeepAddedShare"] = art.pct(
+    100 * float(np.mean(deep["chosen_depth"] > max(variants.gbt.DEPTHS))), 0)
+
+# The other edges of the grids in the main run: the final penalty of a kernel
+# method or of HAL at either end of its grid, boosting's cap on the trees, and
+# its smallest learning rate, with the mean relative drop in CV risk from the
+# next learning rate at the same depth, over the fits that chose it.
+pen = results[results["method"].isin(["har", "mixed_sobolev_depth", "rbf", "hal"])]
+at_end = (pen["chosen_alpha_index"] == 0) | (pen["chosen_alpha_index"] == pen["chosen_n_alphas"] - 1)
+numbers["resBiasPenaltyEdgeFits"] = art.int(int(at_end.sum()))
+numbers["resBiasPenaltyFits"] = art.int(len(pen))
+gb = results[results["method"] == "gbt"]
+numbers["resBiasGbtCapShare"] = art.pct(100 * float(np.mean(gb["chosen_n_trees"] >= gb["chosen_max_trees"])), 0)
+rates = sorted(variants.gbt.RATES)
+low = gb[np.isclose(gb["chosen_learning_rate"], rates[0])]
+gt = tuning[(tuning["method"] == "gbt") & tuning["dgp"].isin(dgp_list)].set_index(
+    ["dgp", "rep", "depth", "learning_rate"])["cv_risk"]
+gains = [gt.loc[(r.dgp, r.rep, r.chosen_depth, rates[1])] / gt.loc[(r.dgp, r.rep, r.chosen_depth, rates[0])] - 1
+         for r in low.itertuples()]
+numbers["resBiasGbtRateShare"] = art.pct(100 * len(low) / len(gb), 0)
+numbers["resBiasGbtRateGain"] = art.pct(100 * float(np.mean(gains)), 1)
+numbers["mthBiasGbtRateLow"] = art.num(rates[0], 2)
+numbers["mthBiasGbtRateNext"] = art.num(rates[1], 1)
 
 # ---- the settings, from the stored results and the DGP code that ran
 def single(column):
