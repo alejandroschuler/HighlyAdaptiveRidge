@@ -27,12 +27,17 @@ os.environ["PYTHONPATH"] = os.pathsep.join(
 NUMBERS = ["kernel-scale",             # the scale of the plain HAR kernel matrix
            "empirical",                # the settings of the estimators and of Table 1
            "fits",                     # the settings of Figure 1
-           "depth"]                    # the settings of the depth figure
+           "depth",                    # the settings of the depth figure
+           "biases",                   # Section 4.3: its ratios, edge checks and settings
+           "bias-truths"]              # the settings of its figure of the truths
 FIGURES = ["fits", "convergence",      # Figures 1 and 2
-           "depth"]                    # cross-validated error against the depth
+           "depth",                    # cross-validated error against the depth
+           "bias-truths"]              # the truths of Section 4.3, in appendix C
 TABLES = ["empirical", "runtime",      # Table 1 (relative test MSE) and the fit times
           "empirical-full",            # the same two tables in the appendix, with
-          "runtime-full"]              # the additional comparators
+          "runtime-full",              # the additional comparators
+          "biases",                    # Section 4.3: mean test MSE on each DGP
+          "bias-frequency"]            # its frequency check, in appendix C
 
 # Exploratory output. Deliberately not part of `rule all`: a manuscript build
 # should not drag along months of abandoned exploration. These two are the
@@ -434,6 +439,113 @@ rule fig_fits:
         methods=PAPER_MAIN,
         names=PAPER_NAMES,
     script: "py/fig_fits.py"
+
+
+# ---------------------------------------------------------------------------
+# Section 4.3 (tab:biases, fig:bias-truths): the simulation that tests the
+# inductive biases of Section 3.4, with the estimators of Section 4.1 that its
+# claims name, tuned as there. Each cell is one estimator on one DGP over a
+# block of BIAS_BLOCK repetitions, on one thread, and declares only its
+# estimator's code, so an edit to one estimator reruns only its cells. The
+# cells write results/biases/, and the table and the numbers read it. The DGPs
+# and their settings are in py/lib/biases.
+
+BIAS_DGPS = ["wave1", "wave2", "wave3", "wave4", "rules", "ramps", "dense", "sparse", "flipped"]
+BIAS_METHODS = ["har", "mixed_sobolev_depth", "hal", "gbt", "rbf"]
+BIAS_REPS = 200
+BIAS_BLOCK = 10
+BIAS_BLOCKS = list(range(BIAS_REPS // BIAS_BLOCK))
+# The edge checks of appendix C: each variant of biases/variants.py, an
+# estimator with one grid extended, on the DGPs where the pilot found that
+# estimator at the edge of the grid.
+BIAS_EDGE = {"rbf_wide": ["wave1"], "gbt_deep": ["wave3", "wave4"]}
+# The frequency check of appendix C: the waves at the other frequencies of the
+# pilot (biases/dgps.py names them), with every estimator, on the first
+# BIAS_FREQ_REPS repetitions.
+BIAS_FREQ_DGPS = [f"wave{k}f{t}" for t in ("15", "20", "30") for k in range(1, 5)]
+BIAS_FREQ_REPS = 50
+BIAS_FREQ_BLOCKS = list(range(BIAS_FREQ_REPS // BIAS_BLOCK))
+
+BIAS_DGP_CODE = lib("py/lib/biases/__init__.py", "py/lib/biases/design.py", "py/lib/biases/dgps.py")
+BIAS_CELL = BIAS_DGP_CODE + lib("py/lib/biases/cell.py", f"{EST}/more_depth.py")
+BIAS_CODE = {
+    **{m: ESTIMATOR_CODE[m] for m in ["har", "hal", "gbt", "rbf"]},
+    "mixed_sobolev_depth": DEPTH_CODE["mixed_sobolev_depth"],
+}
+BIAS_EDGE_CODE = (ESTIMATOR_CODE["rbf"] + ESTIMATOR_CODE["gbt"] + BIAS_CELL
+                  + lib("py/lib/biases/variants.py"))
+
+
+def _bias_reps(wc):
+    b = int(wc.block)
+    return list(range(b * BIAS_BLOCK, (b + 1) * BIAS_BLOCK))
+
+
+def bias_files(kind):
+    """The result or tuning file of every cell of the simulation and of its edge checks."""
+    suffix = "" if kind == "result" else "-tuning"
+    cells = [(d, m) for d in BIAS_DGPS for m in BIAS_METHODS]
+    cells += [(d, v) for v, ds in BIAS_EDGE.items() for d in ds]
+    files = [f"results/biases/{d}/{m}/block{b}{suffix}.csv" for d, m in cells for b in BIAS_BLOCKS]
+    return files + [f"results/biases/{d}/{m}/block{b}{suffix}.csv"
+                    for d in BIAS_FREQ_DGPS for m in BIAS_METHODS for b in BIAS_FREQ_BLOCKS]
+
+
+rule bias_cell:
+    input:
+        helpers=lambda wc: BIAS_CODE[wc.method] + BIAS_CELL,
+    output:
+        result="results/biases/{dgp}/{method}/block{block}.csv",
+        tuning="results/biases/{dgp}/{method}/block{block}-tuning.csv",
+    wildcard_constraints:
+        dgp="|".join(BIAS_DGPS + BIAS_FREQ_DGPS),
+        method="|".join(BIAS_METHODS),
+        block=r"\d+",
+    params:
+        reps=_bias_reps,
+    threads: 1
+    script: "py/bias_cell.py"
+
+
+rule bias_edge:
+    input:
+        helpers=BIAS_EDGE_CODE,
+    output:
+        result="results/biases/{dgp}/{variant}/block{block}.csv",
+        tuning="results/biases/{dgp}/{variant}/block{block}-tuning.csv",
+    wildcard_constraints:
+        dgp="|".join(BIAS_DGPS),
+        variant="|".join(BIAS_EDGE),
+        block=r"\d+",
+    params:
+        reps=_bias_reps,
+    threads: 1
+    script: "py/bias_edge.py"
+
+
+rule table_biases:
+    input:
+        results=bias_files("result"),
+        tunings=bias_files("tuning"),
+        helpers=DISPLAY + BIAS_EDGE_CODE + lib("py/lib/biases/summary.py", "py/lib/biases/report.py"),
+    output:
+        table=f"{ART}/tables/biases.tex",
+        frequency=f"{ART}/tables/bias-frequency.tex",
+        numbers=f"{ART}/numbers/biases.tex",
+    params:
+        dgps=BIAS_DGPS,
+        methods=BIAS_METHODS,
+        names=PAPER_NAMES,
+    script: "py/table_biases.py"
+
+
+rule fig_bias_truths:
+    input:
+        helpers=BIAS_DGP_CODE + lib("py/lib/biases/figures.py", "py/lib/artefacts.py"),
+    output:
+        figure=f"{ART}/figures/bias-truths.pdf",
+        numbers=f"{ART}/numbers/bias-truths.tex",
+    script: "py/fig_bias_truths.py"
 
 
 # ---------------------------------------------------------------------------
