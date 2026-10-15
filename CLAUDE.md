@@ -106,10 +106,11 @@ repair for each state. Load it when a task needs more than these rules.
 - `data/uci` is a link to `../../csv`, the UCI files that other projects share.
   See `data/README.md`.
 - Section 4 has six estimators in the main text (`PAPER_MAIN` in the
-  Snakefile: Table 1 `tab:empirical`, the time table `tab:runtime`, Figure 1)
-  and nine in appendix C (`PAPER_ALL`: `tab:empirical-full`,
-  `tab:runtime-full`), on eleven datasets and five repetitions. Table 1 gives
-  the mean test MSE as a multiple of the row's best. Higher-order HAR left the
+  Snakefile: the benchmark table `tab:empirical`, the time table
+  `tab:runtime`, Figure 1) and nine in appendix C (`PAPER_ALL`:
+  `tab:empirical-full`, `tab:runtime-full`), on eleven datasets and five
+  repetitions. The benchmark table gives the mean test MSE as a multiple of
+  the row's best; it is Table 2, since Section 4.3's `tab:biases` comes first. Higher-order HAR left the
   paper in October 2026: first-order HAR (`har1`) and first-order mixed Sobolev
   KRR (`mixed_sobolev1_depth`) are still fit, for the full tables of
   `paper/notes/higher-order-har.tex`. Each fit is one Snakemake
@@ -126,6 +127,15 @@ repair for each state. Load it when a task needs more than these rules.
   with fewer jobs than free cores (other sessions share this machine), with
   `SNAKEMAKE_FLAGS=--keep-going`, and with `BUILD_TARGETS` naming the paper's
   artefacts, since the unused convergence figure has no results on disk.
+- Section 4.3 (`tab:biases`, and in appendix C `tab:bias-frequency` and
+  `fig:bias-truths`) is the simulation of the inductive biases of Section 3.4,
+  adapted from `paper/notes/inductive-bias.tex` to the Section 4.1 estimators
+  (HAR, MS-KRR, HAL, gradient boosted trees, radial basis KRR) tuned as there.
+  Code in `py/lib/biases/`, rules `bias_cell`, `bias_edge` and `table_biases`;
+  1263 jobs in blocks of 10 repetitions, about 3 hours on 10 cores. Snakemake
+  reads a `script:` file when the build starts, so an edit to
+  `py/table_biases.py` during a build reaches the artefact only after
+  `SNAKEMAKE_FLAGS="--forcerun table_biases"`.
 - `make test` has no known failures. On a branch without the LOOCV fix of
   October 2026, `test_LOOCV_for_HAR_vs_kernel_HAR[data9]` fails, a degenerate
   case (n = 3, d = 16, pure noise).
