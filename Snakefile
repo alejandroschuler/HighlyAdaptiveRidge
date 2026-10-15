@@ -169,8 +169,10 @@ SM_METHODS = ["har", "anchored_sobolev", "mixed_sobolev_depth", "mixed_sobolev",
 # is the version with depth tuning; the plain kernel (mixed_sobolev) is no
 # longer in the paper. The first-order estimators (har1, mixed_sobolev1_depth)
 # left the paper in October 2026 with the rest of higher-order HAR; their fits
-# stay for paper/notes/higher-order-har.tex.
-PAPER_MAIN = ["har", "mixed_sobolev_depth", "rbf", "hal", "rf", "enet"]
+# stay for paper/notes/higher-order-har.tex. Gradient boosted trees took the
+# place of the random forest in the main text on 2026-10-15, at the author's
+# request; the random forest moved to the appendix.
+PAPER_MAIN = ["har", "mixed_sobolev_depth", "rbf", "hal", "gbt", "enet"]
 PAPER_ALL = ["har", "mixed_sobolev_depth", "rbf", "hal", "mars", "rf", "gbt", "mlp", "enet"]
 # The paper's names for the estimators whose module names them otherwise.
 PAPER_NAMES = {"mixed_sobolev_depth": "Mixed Sobolev KRR",
