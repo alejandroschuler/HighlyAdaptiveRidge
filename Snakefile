@@ -32,7 +32,9 @@ NUMBERS = ["kernel-scale",             # the scale of the plain HAR kernel matri
            "bias-truths"]              # the settings of its figure of the truths
 FIGURES = ["fits", "convergence",      # Figures 1 and 2
            "depth",                    # cross-validated error against the depth
-           "bias-truths"]              # the truths of Section 4.3, in appendix C
+           "bias-truths-waves",        # the truths of Section 4.3, one figure
+           "bias-truths-rules",        # for each claim
+           "bias-truths-density"]
 TABLES = ["empirical", "runtime",      # Table 1 (relative test MSE) and the fit times
           "empirical-full",            # the same two tables in the appendix, with
           "runtime-full",              # the additional comparators
@@ -446,8 +448,8 @@ rule fig_fits:
 
 
 # ---------------------------------------------------------------------------
-# Section 4.3 (tab:bias-waves, tab:bias-rules, tab:bias-density,
-# fig:bias-truths): the simulation that tests the inductive biases of Section
+# Section 4.3 (tab:bias-waves, tab:bias-rules, tab:bias-density, and the
+# figures of the truths, fig:bias-truths-waves, -rules and -density): the simulation that tests the inductive biases of Section
 # 3.4, with the estimators of Section 4.1 that its claims name, tuned as there.
 # Each cell is one estimator on one DGP over a block of BIAS_BLOCK repetitions,
 # on one thread, and declares only its estimator's code, so an edit to one
@@ -550,7 +552,9 @@ rule fig_bias_truths:
     input:
         helpers=BIAS_DGP_CODE + lib("py/lib/biases/figures.py", "py/lib/artefacts.py"),
     output:
-        figure=f"{ART}/figures/bias-truths.pdf",
+        waves=f"{ART}/figures/bias-truths-waves.pdf",
+        rules=f"{ART}/figures/bias-truths-rules.pdf",
+        density=f"{ART}/figures/bias-truths-density.pdf",
         numbers=f"{ART}/numbers/bias-truths.tex",
     script: "py/fig_bias_truths.py"
 
