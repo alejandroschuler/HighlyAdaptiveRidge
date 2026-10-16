@@ -36,7 +36,9 @@ FIGURES = ["fits", "convergence",      # Figures 1 and 2
 TABLES = ["empirical", "runtime",      # Table 1 (relative test MSE) and the fit times
           "empirical-full",            # the same two tables in the appendix, with
           "runtime-full",              # the additional comparators
-          "biases",                    # Section 4.3: mean test MSE on each DGP
+          "bias-waves",                # Section 4.3: mean test MSE on each DGP,
+          "bias-rules",                # one table for each claim
+          "bias-density",
           "bias-frequency"]            # its frequency check, in appendix C
 
 # Exploratory output. Deliberately not part of `rule all`: a manuscript build
@@ -444,13 +446,14 @@ rule fig_fits:
 
 
 # ---------------------------------------------------------------------------
-# Section 4.3 (tab:biases, fig:bias-truths): the simulation that tests the
-# inductive biases of Section 3.4, with the estimators of Section 4.1 that its
-# claims name, tuned as there. Each cell is one estimator on one DGP over a
-# block of BIAS_BLOCK repetitions, on one thread, and declares only its
-# estimator's code, so an edit to one estimator reruns only its cells. The
-# cells write results/biases/, and the table and the numbers read it. The DGPs
-# and their settings are in py/lib/biases.
+# Section 4.3 (tab:bias-waves, tab:bias-rules, tab:bias-density,
+# fig:bias-truths): the simulation that tests the inductive biases of Section
+# 3.4, with the estimators of Section 4.1 that its claims name, tuned as there.
+# Each cell is one estimator on one DGP over a block of BIAS_BLOCK repetitions,
+# on one thread, and declares only its estimator's code, so an edit to one
+# estimator reruns only its cells. The cells write results/biases/, and the
+# tables (one for each claim) and the numbers read it. The DGPs and their
+# settings are in py/lib/biases.
 
 BIAS_DGPS = ["wave1", "wave2", "wave3", "wave4", "rules", "ramps", "dense", "sparse", "flipped"]
 BIAS_METHODS = ["har", "mixed_sobolev_depth", "hal", "gbt", "rbf"]
@@ -531,7 +534,9 @@ rule table_biases:
         tunings=bias_files("tuning"),
         helpers=DISPLAY + BIAS_EDGE_CODE + lib("py/lib/biases/summary.py", "py/lib/biases/report.py"),
     output:
-        table=f"{ART}/tables/biases.tex",
+        waves=f"{ART}/tables/bias-waves.tex",
+        rules=f"{ART}/tables/bias-rules.tex",
+        density=f"{ART}/tables/bias-density.tex",
         frequency=f"{ART}/tables/bias-frequency.tex",
         numbers=f"{ART}/numbers/biases.tex",
     params:

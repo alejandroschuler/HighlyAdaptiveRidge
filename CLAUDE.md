@@ -110,8 +110,8 @@ repair for each state. Load it when a task needs more than these rules.
   `tab:runtime`, Figure 1) and nine in appendix C (`PAPER_ALL`:
   `tab:empirical-full`, `tab:runtime-full`), on eleven datasets and five
   repetitions. The benchmark table gives the mean test MSE as a multiple of
-  the row's best; it is Table 2, since Section 4.3's `tab:biases` comes first. Higher-order HAR left the
-  paper in October 2026: first-order HAR (`har1`) and first-order mixed Sobolev
+  the row's best; it is Table 4, since the three tables of Section 4.3 come
+  first. Higher-order HAR left the paper in October 2026: first-order HAR (`har1`) and first-order mixed Sobolev
   KRR (`mixed_sobolev1_depth`) are still fit, for the full tables of
   `paper/notes/higher-order-har.tex`. Each fit is one Snakemake
   job on one thread, so that the times compare, and the Snakefile runs every
@@ -127,7 +127,8 @@ repair for each state. Load it when a task needs more than these rules.
   with fewer jobs than free cores (other sessions share this machine), with
   `SNAKEMAKE_FLAGS=--keep-going`, and with `BUILD_TARGETS` naming the paper's
   artefacts, since the unused convergence figure has no results on disk.
-- Section 4.3 (`tab:biases`, and in appendix C `tab:bias-frequency` and
+- Section 4.3 (one table for each claim, `tab:bias-waves`, `tab:bias-rules`
+  and `tab:bias-density`, and in appendix C `tab:bias-frequency` and
   `fig:bias-truths`) is the simulation of the inductive biases of Section 3.4,
   adapted from `paper/notes/inductive-bias.tex` to the Section 4.1 estimators
   (HAR, MS-KRR, HAL, gradient boosted trees, radial basis KRR) tuned as there.
@@ -135,7 +136,9 @@ repair for each state. Load it when a task needs more than these rules.
   1263 jobs in blocks of 10 repetitions, about 3 hours on 10 cores. Snakemake
   reads a `script:` file when the build starts, so an edit to
   `py/table_biases.py` during a build reaches the artefact only after
-  `SNAKEMAKE_FLAGS="--forcerun table_biases"`.
+  `SNAKEMAKE_FLAGS="--forcerun table_biases"`. Its tables print the mean
+  test MSE itself, a fraction of the truth's variance (author's request,
+  2026-10-16), not a percent.
 - `make test` has no known failures. On a branch without the LOOCV fix of
   October 2026, `test_LOOCV_for_HAR_vs_kernel_HAR[data9]` fails, a degenerate
   case (n = 3, d = 16, pure noise).
@@ -145,7 +148,7 @@ repair for each state. Load it when a task needs more than these rules.
 - `reviews/` holds the confidential referee reports. It is ignored here, and
   nothing from it goes into a commit or a push.
 - Since October 2026 the paper uses the pipeline's Figure 1
-  (`artefacts/figures/fits.pdf`), Table 1 and the time table. The hand-placed
+  (`artefacts/figures/fits.pdf`), the benchmark table and the time table. The hand-placed
   2024 files `paper/fits.pdf` and `paper/convergence.pdf` are no longer used,
   and the paper no longer has a convergence figure, so the Snakefile's
   `convergence` figure is unused too.

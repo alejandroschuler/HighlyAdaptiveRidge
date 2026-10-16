@@ -1,8 +1,8 @@
-"""Section 4.3: the table of the inductive-bias simulation (tab:biases), each
-estimator's mean test MSE on each DGP in percent of the truth's variance, and
-the numbers file with the ratios that the text quotes, the edge checks of
-appendix C and the settings of the simulation, read from the stored results
-and from the DGP code that ran."""
+"""Section 4.3: the tables of the inductive-bias simulation, one for each claim
+(tab:bias-waves, tab:bias-rules, tab:bias-density), each estimator's mean test
+MSE on each DGP, and the numbers file with the ratios that the text quotes, the
+edge checks of appendix C and the settings of the simulation, read from the
+stored results and from the DGP code that ran."""
 import numpy as np
 import pandas as pd
 
@@ -23,10 +23,11 @@ edges = allres[allres["method"].isin(list(variants.VARIANTS))]
 check = allres[allres["dgp"].isin(freq_dgps) & allres["method"].isin(methods)]
 results = allres[allres["dgp"].isin(dgp_list) & allres["method"].isin(methods)]
 
-# ---- the table
-body = report.table(results, dgp_list, methods, lambda m: tables._header(m, names))
-art.save_table(snakemake.output.table, body, label="tab:biases", escape=False,
-               column_format="cl|" + "r" * len(methods))
+# ---- the tables, one for each claim
+for claim, claim_dgps in report.CLAIM_TABLES.items():
+    body = report.table(results, claim_dgps, methods, lambda m: tables._header(m, names))
+    art.save_table(getattr(snakemake.output, claim), body, label=f"tab:bias-{claim}", escape=False,
+                   column_format="l|" + "r" * len(methods))
 
 # ---- the frequency check, on its repetitions, with the main run's waves on the same ones
 check_reps = sorted(check["rep"].unique())
@@ -43,9 +44,9 @@ art.save_table(snakemake.output.frequency, report.frequency_table(waves, by_peri
 m = summary.means(results)
 
 
-def pct(x, digits=None):
-    """A mean test MSE in percent of the truth's variance, rounded as in the table."""
-    return rf"\num{{{report.pct_cell(x)}}}"
+def mse(x):
+    """A mean test MSE, rounded as in the tables."""
+    return rf"\num{{{report.mse_cell(x)}}}"
 
 
 
@@ -68,10 +69,10 @@ for k, word in zip([2, 4], ["Two", "Four"]):
     rs = report.ratios(results, [(f"wave{k}", b, f"wave{k}", "rbf") for b in report.BV])
     numbers[f"resBiasWave{word}Low"], numbers[f"resBiasWave{word}High"] = rng([r["ratio"] for r in rs], 1)
 rbf = [m.loc[(d, "rbf"), "mean"] for d in report.WAVES]
-numbers["resBiasWaveRbfLow"], numbers["resBiasWaveRbfHigh"] = pct(min(rbf)), pct(max(rbf))
+numbers["resBiasWaveRbfLow"], numbers["resBiasWaveRbfHigh"] = mse(min(rbf)), mse(max(rbf))
 for d, word in zip(report.WAVES, ["One", "Two", "Three", "Four"]):
     bv = [m.loc[(d, b), "mean"] for b in report.BV]
-    numbers[f"resBiasWave{word}BvLow"], numbers[f"resBiasWave{word}BvHigh"] = pct(min(bv)), pct(max(bv))
+    numbers[f"resBiasWave{word}BvLow"], numbers[f"resBiasWave{word}BvHigh"] = mse(min(bv)), mse(max(bv))
 # the depth that the depth-tuned estimators chose on each wave
 depth_tuned = results[results["method"].isin(["har", "mixed_sobolev_depth", "hal"])
                       & results["dgp"].isin(report.WAVES)]
@@ -112,20 +113,20 @@ numbers["resBiasNContrasts"] = art.int(len(cf))
 # The edge checks of appendix C.
 rbf1 = results[(results["dgp"] == "wave1") & (results["method"] == "rbf")]
 numbers["resBiasRbfEdgeShare"] = art.pct(100 * float(np.mean(np.isclose(rbf1["chosen_scale"], 2.0 ** -6))), 0)
-numbers["resBiasRbfMseWaveOne"] = pct(m.loc[("wave1", "rbf"), "mean"])
+numbers["resBiasRbfMseWaveOne"] = mse(m.loc[("wave1", "rbf"), "mean"])
 wide = edges[edges["method"] == "rbf_wide"]
-numbers["resBiasRbfWideMse"] = pct(wide["mse"].mean())
+numbers["resBiasRbfWideMse"] = mse(wide["mse"].mean())
 numbers["resBiasRbfWideScaleLow"], numbers["resBiasRbfWideScaleHigh"] = (
     art.int(np.log2(wide["chosen_scale"]).min()), art.int(np.log2(wide["chosen_scale"]).max()))
 bv1 = [m.loc[("wave1", b), "mean"] for b in report.BV]
-numbers["resBiasBvMseWaveOneHigh"] = pct(max(bv1))
+numbers["resBiasBvMseWaveOneHigh"] = mse(max(bv1))
 deep = edges[edges["method"] == "gbt_deep"]
 gbt34 = results[(results["method"] == "gbt") & results["dgp"].isin(["wave3", "wave4"])]
 numbers["resBiasGbtEdgeShare"] = art.pct(100 * float(np.mean(gbt34["chosen_depth"] == max(variants.gbt.DEPTHS))), 0)
 for d, word in zip(["wave3", "wave4"], ["Three", "Four"]):
-    numbers[f"resBiasGbtMse{word}"] = pct(m.loc[(d, "gbt"), "mean"])
-    numbers[f"resBiasGbtDeepMse{word}"] = pct(deep.loc[deep["dgp"] == d, "mse"].mean())
-    numbers[f"resBiasRbfMse{word}"] = pct(m.loc[(d, "rbf"), "mean"])
+    numbers[f"resBiasGbtMse{word}"] = mse(m.loc[(d, "gbt"), "mean"])
+    numbers[f"resBiasGbtDeepMse{word}"] = mse(deep.loc[deep["dgp"] == d, "mse"].mean())
+    numbers[f"resBiasRbfMse{word}"] = mse(m.loc[(d, "rbf"), "mean"])
 numbers["mthBiasFreqReps"] = art.int(len(check_reps))
 numbers["mthBiasCheckPeriods"] = art.numlist(dgps.CHECK_PERIODS)
 numbers["resBiasGbtDeepAddedShare"] = art.pct(
