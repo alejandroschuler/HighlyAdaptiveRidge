@@ -20,7 +20,8 @@ WAVES = [("wave1", "$k = 1$"), ("wave2", "$k = 2$")]
 RULES = [("rules", r"steps, $\ell = 0$"), ("ramps", rf"ramps, $\ell = {dgps.RAMP_WIDTH:g}$")]
 DENSITY = [("dense", "dense"), ("sparse", "sparse"), ("flipped", "flipped")]
 
-PANEL = 2.1     # inches of width per panel, so that the panels match across figures
+PANEL = 1.45    # inches of width per panel: the panels match across figures, and three
+                # panels with their colour bars fill the 406pt text width at print size
 
 
 def _surface(name, Z):
@@ -45,14 +46,14 @@ def _row(panels, n_points=0, grid=300, decorate=None, shared=True):
     Z = np.stack(np.meshgrid(t, t, indexing="xy"), axis=-1).reshape(-1, 2)
     surfaces = [_surface(name, Z).reshape(grid, grid) for name, _ in panels]
     width = PANEL * len(panels) + (0.6 if shared else 0.4 * len(panels))
-    fig.set_size_inches(width, 2.35)
+    fig.set_size_inches(width, 1.95)
     row_top = max(np.abs(F).max() for F in surfaces)
     for ax, (name, title), F in zip(axes, panels, surfaces):
         top = row_top if shared else np.abs(F).max()
         im = ax.imshow(F, origin="lower", extent=(0, 1, 0, 1), cmap=DIVERGING,
                        vmin=-top, vmax=top, interpolation="nearest")
         if not shared:
-            cb = fig.colorbar(im, ax=ax, shrink=0.85, pad=0.02)
+            cb = fig.colorbar(im, ax=ax, shrink=0.75, pad=0.02)
             cb.ax.tick_params(labelsize=6, colors=MUTED)
         if n_points:
             X, _ = dgps.draw(name, 0)["train"]
@@ -66,7 +67,7 @@ def _row(panels, n_points=0, grid=300, decorate=None, shared=True):
         ax.set_xlabel("$x_1$", fontsize=8, labelpad=1)
         ax.set_ylabel("$x_2$", fontsize=8, labelpad=1)
     if shared:
-        cb = fig.colorbar(im, ax=list(axes), shrink=0.85, pad=0.02)
+        cb = fig.colorbar(im, ax=list(axes), shrink=0.75, pad=0.02)
         cb.ax.tick_params(labelsize=6, colors=MUTED)
     return fig
 
