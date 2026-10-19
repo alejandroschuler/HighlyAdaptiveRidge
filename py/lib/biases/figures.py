@@ -17,7 +17,7 @@ DIVERGING = LinearSegmentedColormap.from_list(
 # The panels of each figure: (DGP, title). Claims 2 and 3 draw the terms of the
 # truth in (x_1, x_2); the terms in (x_3, x_4) are the same function of them.
 WAVES = [("wave1", "$k = 1$"), ("wave2", "$k = 2$")]
-RULES = [("rules", r"steps, $\ell = 0$"), ("ramps", rf"ramps, $\ell = {dgps.RAMP_WIDTH:g}$")]
+RULES = [("rules", r"steps, $\theta = 0$"), ("ramps", rf"ramps, $\theta = {dgps.RAMP_WIDTH:g}$")]
 DENSITY = [("dense", "dense"), ("sparse", "sparse"), ("flipped", "flipped")]
 
 PANEL = 1.45    # inches of width per panel: the panels match across figures, and three
