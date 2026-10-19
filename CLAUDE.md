@@ -110,7 +110,7 @@ repair for each state. Load it when a task needs more than these rules.
   `tab:runtime`, Figure 1) and nine in appendix C (`PAPER_ALL`:
   `tab:empirical-full`, `tab:runtime-full`), on eleven datasets and five
   repetitions. The benchmark table gives the mean test MSE as a multiple of
-  the row's best; it is Table 4, since the three tables of Section 4.3 come
+  the row's best; it is Table 5, since the four tables of Section 4.3 come
   first. Higher-order HAR left the paper in October 2026: first-order HAR (`har1`) and first-order mixed Sobolev
   KRR (`mixed_sobolev1_depth`) are still fit, for the full tables of
   `paper/notes/higher-order-har.tex`. Each fit is one Snakemake
@@ -145,6 +145,16 @@ repair for each state. Load it when a task needs more than these rules.
   `SNAKEMAKE_FLAGS="--forcerun table_biases"`. Its tables print the mean
   test MSE itself, a fraction of the truth's variance (author's request,
   2026-10-16), not a percent.
+  Claim 1 also has a check with more covariates (`tab:bias-dimension`, Table
+  2): the wave along two covariates copied onto every pair of p = 4 to 24
+  covariates, without HAL, 200 repetitions. Its cells are `copies_cell`
+  (`py/lib/biases/copies.py`, `results/bias-copies/`, 400 cells, about 2
+  hours), with their own run function so that the other bias cells do not
+  rerun, and its table and numbers are `table_bias_dimension`. The cells were
+  run on `wip/bias-dimension` (kept for the stamps of its notes), and the
+  cell files came to `main` unchanged with their October 15 mtimes restored,
+  so a fresh checkout of those files makes Snakemake rerun all 400 cells
+  unless their mtimes are set back.
 - `make test` has no known failures. On a branch without the LOOCV fix of
   October 2026, `test_LOOCV_for_HAR_vs_kernel_HAR[data9]` fails, a degenerate
   case (n = 3, d = 16, pure noise).
