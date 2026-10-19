@@ -16,11 +16,8 @@ allres = pd.concat(frames, ignore_index=True)
 dgp_list = list(snakemake.params.dgps)
 methods = list(snakemake.params.methods)
 names = dict(snakemake.params.names)
-# The main run, its edge checks, and the frequency check, whose DGPs are the
-# waves at other frequencies.
-freq_dgps = [d for d in dgps.WAVES if d not in dgp_list]
+# The main run and its edge checks.
 edges = allres[allres["method"].isin(list(variants.VARIANTS))]
-check = allres[allres["dgp"].isin(freq_dgps) & allres["method"].isin(methods)]
 results = allres[allres["dgp"].isin(dgp_list) & allres["method"].isin(methods)]
 
 # ---- the tables, one for each claim
@@ -28,17 +25,6 @@ for claim, claim_dgps in report.CLAIM_TABLES.items():
     body = report.table(results, claim_dgps, methods, lambda m: tables._header(m, names))
     art.save_table(getattr(snakemake.output, claim), body, label=f"tab:bias-{claim}", escape=False,
                    column_format="l|" + "r" * len(methods))
-
-# ---- the frequency check, on its repetitions, with the main run's waves on the same ones
-check_reps = sorted(check["rep"].unique())
-waves = pd.concat([check, results[results["dgp"].isin(report.WAVES) & results["rep"].isin(check_reps)]])
-by_periods = {}
-for name, (k, periods) in dgps.WAVES.items():
-    by_periods.setdefault(periods, {})[k] = name
-by_periods = dict(sorted(by_periods.items()))
-k_values = sorted(next(iter(by_periods.values())))
-art.save_table(snakemake.output.frequency, report.frequency_table(waves, by_periods, k_values),
-               label="tab:bias-frequency", escape=False, column_format="r|" + "c" * len(k_values))
 
 # ---- the numbers
 m = summary.means(results)
@@ -127,8 +113,6 @@ for d, word in zip(["wave3", "wave4"], ["Three", "Four"]):
     numbers[f"resBiasGbtMse{word}"] = mse(m.loc[(d, "gbt"), "mean"])
     numbers[f"resBiasGbtDeepMse{word}"] = mse(deep.loc[deep["dgp"] == d, "mse"].mean())
     numbers[f"resBiasRbfMse{word}"] = mse(m.loc[(d, "rbf"), "mean"])
-numbers["mthBiasFreqReps"] = art.int(len(check_reps))
-numbers["mthBiasCheckPeriods"] = art.numlist(dgps.CHECK_PERIODS)
 numbers["resBiasGbtDeepAddedShare"] = art.pct(
     100 * float(np.mean(deep["chosen_depth"] > max(variants.gbt.DEPTHS))), 0)
 
@@ -169,8 +153,6 @@ numbers.update(
     mthBiasN=art.int(single("n")), mthBiasNTest=art.int(single("n_test")), mthBiasP=art.int(single("p")),
     mthBiasReps=art.int(reps.iloc[0]), mthBiasSigma=art.num(sigma, 1),
     mthBiasRsq=art.pct(100 / (1 + sigma ** 2), 0),
-    mthBiasWavePeriods=art.num(dgps.WAVE_PERIODS, 0) if float(dgps.WAVE_PERIODS).is_integer()
-    else art.num(dgps.WAVE_PERIODS, 1),
     mthBiasRuleCentres="(" + ", ".join(rf"\num{{{c:g}}}" for c in dgps.RULE_CENTRES) + ")",
     mthBiasRampWidth=art.num(dgps.RAMP_WIDTH, 1),
     mthBiasDenseTop=art.num(dgps.DENSE_TOP, 1),

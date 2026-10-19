@@ -40,8 +40,7 @@ TABLES = ["empirical", "runtime",      # Table 1 (relative test MSE) and the fit
           "runtime-full",              # the additional comparators
           "bias-waves",                # Section 4.3: mean test MSE on each DGP,
           "bias-rules",                # one table for each claim
-          "bias-density",
-          "bias-frequency"]            # its frequency check, in appendix C
+          "bias-density"]
 
 # Exploratory output. Deliberately not part of `rule all`: a manuscript build
 # should not drag along months of abandoned exploration. These two are the
@@ -466,12 +465,6 @@ BIAS_BLOCKS = list(range(BIAS_REPS // BIAS_BLOCK))
 # estimator with one grid extended, on the DGPs where the pilot found that
 # estimator at the edge of the grid.
 BIAS_EDGE = {"rbf_wide": ["wave1"], "gbt_deep": ["wave3", "wave4"]}
-# The frequency check of appendix C: the waves at the other frequencies of the
-# pilot (biases/dgps.py names them), with every estimator, on the first
-# BIAS_FREQ_REPS repetitions.
-BIAS_FREQ_DGPS = [f"wave{k}f{t}" for t in ("15", "20", "30") for k in range(1, 5)]
-BIAS_FREQ_REPS = 50
-BIAS_FREQ_BLOCKS = list(range(BIAS_FREQ_REPS // BIAS_BLOCK))
 
 BIAS_DGP_CODE = lib("py/lib/biases/__init__.py", "py/lib/biases/design.py", "py/lib/biases/dgps.py")
 BIAS_CELL = BIAS_DGP_CODE + lib("py/lib/biases/cell.py", f"{EST}/more_depth.py")
@@ -493,9 +486,7 @@ def bias_files(kind):
     suffix = "" if kind == "result" else "-tuning"
     cells = [(d, m) for d in BIAS_DGPS for m in BIAS_METHODS]
     cells += [(d, v) for v, ds in BIAS_EDGE.items() for d in ds]
-    files = [f"results/biases/{d}/{m}/block{b}{suffix}.csv" for d, m in cells for b in BIAS_BLOCKS]
-    return files + [f"results/biases/{d}/{m}/block{b}{suffix}.csv"
-                    for d in BIAS_FREQ_DGPS for m in BIAS_METHODS for b in BIAS_FREQ_BLOCKS]
+    return [f"results/biases/{d}/{m}/block{b}{suffix}.csv" for d, m in cells for b in BIAS_BLOCKS]
 
 
 rule bias_cell:
@@ -505,7 +496,7 @@ rule bias_cell:
         result="results/biases/{dgp}/{method}/block{block}.csv",
         tuning="results/biases/{dgp}/{method}/block{block}-tuning.csv",
     wildcard_constraints:
-        dgp="|".join(BIAS_DGPS + BIAS_FREQ_DGPS),
+        dgp="|".join(BIAS_DGPS),
         method="|".join(BIAS_METHODS),
         block=r"\d+",
     params:
@@ -539,7 +530,6 @@ rule table_biases:
         waves=f"{ART}/tables/bias-waves.tex",
         rules=f"{ART}/tables/bias-rules.tex",
         density=f"{ART}/tables/bias-density.tex",
-        frequency=f"{ART}/tables/bias-frequency.tex",
         numbers=f"{ART}/numbers/biases.tex",
     params:
         dgps=BIAS_DGPS,

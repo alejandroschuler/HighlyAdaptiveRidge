@@ -128,12 +128,18 @@ repair for each state. Load it when a task needs more than these rules.
   `SNAKEMAKE_FLAGS=--keep-going`, and with `BUILD_TARGETS` naming the paper's
   artefacts, since the unused convergence figure has no results on disk.
 - Section 4.3 (one table for each claim, `tab:bias-waves`, `tab:bias-rules`
-  and `tab:bias-density`, and in appendix C `tab:bias-frequency` and
-  `fig:bias-truths`) is the simulation of the inductive biases of Section 3.4,
+  and `tab:bias-density`, and one figure of the truths for each claim,
+  `fig:bias-truths-waves`, `-rules` and `-density`; appendix C.3 has the
+  scaling of the truths and the edge checks of the grids) is the simulation
+  of the inductive biases of Section 3.4,
   adapted from `paper/notes/inductive-bias.tex` to the Section 4.1 estimators
   (HAR, MS-KRR, HAL, gradient boosted trees, radial basis KRR) tuned as there.
-  Code in `py/lib/biases/`, rules `bias_cell`, `bias_edge` and `table_biases`;
-  1263 jobs in blocks of 10 repetitions, about 3 hours on 10 cores. Snakemake
+  Code in `py/lib/biases/`, rules `bias_cell`, `bias_edge`, `table_biases` and
+  `fig_bias_truths`; 960 fits in blocks of 10 repetitions. The frequency
+  check of the waves left the paper in October 2026, and its rules went with
+  it, but `py/lib/biases/dgps.py` still defines its waves (`CHECK_PERIODS`),
+  because every bias job reads that file, so an edit to it reruns them all
+  (about 3 hours on 10 cores). Snakemake
   reads a `script:` file when the build starts, so an edit to
   `py/table_biases.py` during a build reaches the artefact only after
   `SNAKEMAKE_FLAGS="--forcerun table_biases"`. Its tables print the mean

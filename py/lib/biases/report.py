@@ -90,20 +90,3 @@ def flip_max_rel(results, method):
     w = results.pivot_table(index=["dgp", "rep"], columns="method", values="mse")
     a, b = w.loc["dense"][method], w.loc["flipped"][method]
     return float(np.max(np.abs(a - b) / b))
-
-
-def frequency_table(results, periods_names, k_values):
-    """The frequency check: one row per frequency and one column per k, each
-    cell the smallest and the largest mean test MSE of the bounded-variation
-    estimators, and in parentheses that of radial basis KRR. `periods_names`
-    maps a frequency to {k: DGP name}."""
-    m = means(results)["mean"]
-    rows = []
-    for periods, by_k in periods_names.items():
-        row = {"Periods": f"{periods:g}"}
-        for k in k_values:
-            d = by_k[k]
-            bv = [m[(d, b)] for b in BV]
-            row[f"$k = {k}$"] = f"{mse_cell(min(bv))}--{mse_cell(max(bv))} ({mse_cell(m[(d, 'rbf')])})"
-        rows.append(row)
-    return pd.DataFrame(rows)
