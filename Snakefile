@@ -29,7 +29,8 @@ NUMBERS = ["kernel-scale",             # the scale of the plain HAR kernel matri
            "fits",                     # the settings of Figure 1
            "depth",                    # the settings of the depth figure
            "biases",                   # Section 4.3: its ratios, edge checks and settings
-           "bias-truths"]              # the settings of its figure of the truths
+           "bias-truths",              # the settings of its figure of the truths
+           "bias-dimension"]           # its claim 1 with more covariates
 FIGURES = ["fits", "convergence",      # Figures 1 and 2
            "depth",                    # cross-validated error against the depth
            "bias-truths-waves",        # the truths of Section 4.3, one figure
@@ -40,7 +41,8 @@ TABLES = ["empirical", "runtime",      # Table 1 (relative test MSE) and the fit
           "runtime-full",              # the additional comparators
           "bias-waves",                # Section 4.3: mean test MSE on each DGP,
           "bias-rules",                # one table for each claim
-          "bias-density"]
+          "bias-density",
+          "bias-dimension"]            # claim 1 with more covariates
 
 # Exploratory output. Deliberately not part of `rule all`: a manuscript build
 # should not drag along months of abandoned exploration. These two are the
@@ -547,6 +549,55 @@ rule fig_bias_truths:
         density=f"{ART}/figures/bias-truths-density.pdf",
         numbers=f"{ART}/numbers/bias-truths.tex",
     script: "py/fig_bias_truths.py"
+
+
+# Claim 1 of Section 4.3 with more covariates (tab:bias-dimension): the wave
+# along two covariates, copied onto every pair of p covariates
+# (biases/copies.py), with the estimators of Section 4.3 but HAL. Cells as in
+# bias_cell, writing results/bias-copies/.
+# biases/copies.py has its own run function, so that the cells of Section 4.3,
+# which declare biases/cell.py and biases/dgps.py, do not rerun.
+COPIES_DGPS = [f"copies{p}" for p in (4, 8, 12, 16, 24)]
+COPIES_METHODS = ["har", "mixed_sobolev_depth", "gbt", "rbf"]
+COPIES_REPS = 200
+COPIES_BLOCKS = list(range(COPIES_REPS // BIAS_BLOCK))
+COPIES_CELL = BIAS_CELL + lib("py/lib/biases/copies.py")
+
+
+def copies_files(kind):
+    suffix = "" if kind == "result" else "-tuning"
+    return [f"results/bias-copies/{d}/{m}/block{b}{suffix}.csv"
+            for d in COPIES_DGPS for m in COPIES_METHODS for b in COPIES_BLOCKS]
+
+
+rule copies_cell:
+    input:
+        helpers=lambda wc: BIAS_CODE[wc.method] + COPIES_CELL,
+    output:
+        result="results/bias-copies/{dgp}/{method}/block{block}.csv",
+        tuning="results/bias-copies/{dgp}/{method}/block{block}-tuning.csv",
+    wildcard_constraints:
+        dgp="|".join(COPIES_DGPS),
+        method="|".join(COPIES_METHODS),
+        block=r"\d+",
+    params:
+        reps=_bias_reps,
+    threads: 1
+    script: "py/copies_cell.py"
+
+
+rule table_bias_dimension:
+    input:
+        results=copies_files("result"),
+        helpers=DISPLAY + COPIES_CELL + lib("py/lib/biases/summary.py", "py/lib/biases/report.py",
+                                            "py/lib/biases/copies_display.py"),
+    output:
+        table=f"{ART}/tables/bias-dimension.tex",
+        numbers=f"{ART}/numbers/bias-dimension.tex",
+    params:
+        methods=COPIES_METHODS,
+        names=PAPER_NAMES,
+    script: "py/table_bias_dimension.py"
 
 
 # ---------------------------------------------------------------------------
