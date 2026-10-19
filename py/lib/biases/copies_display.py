@@ -1,9 +1,9 @@
-"""The table and the summaries of claim 1 of Section 4.3 with more covariates
+"""The table of claim 1 of Section 4.3 with more covariates
 (biases/copies.py, tab:bias-dimension), from the per-repetition results."""
 import pandas as pd
 
 from .report import mse_cell
-from .summary import contrast, means
+from .summary import means
 
 
 def table(results, methods, header):
@@ -21,14 +21,3 @@ def table(results, methods, header):
         rows.append(row)
     return pd.DataFrame(rows)
 
-
-def ratios_to_rbf(results, methods):
-    """For each DGP and each method other than radial basis KRR, contrast() of
-    radial basis KRR against the method: above 1 when the method has the smaller
-    mean test MSE."""
-    rows = []
-    for d, p in results.groupby("dgp")["p"].first().items():
-        for k in methods:
-            if k != "rbf":
-                rows.append({"dgp": d, "p": p, "method": k, **contrast(results, d, "rbf", d, k)})
-    return pd.DataFrame(rows).sort_values(["p", "method"])
