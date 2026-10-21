@@ -33,6 +33,13 @@ har.predict(X_)
 | `legacy/` | the 2024 notebooks that the pipeline replaced |
 | `paper/` | the Overleaf clone of the paper, a separate git repo |
 
+## The HAR basis in the code
+
+The implementation uses the indicators `1(X_ij <= x_j)` on the raw covariates,
+which are not scaled. This is the basis `1(0 < X_ij <= x_j)` of Section 2 of the
+paper after a strictly increasing map of each covariate into (0, 1), which does
+not change the fit (Section 3.3 of the paper).
+
 ## Reproducing the paper
 
 Every figure and table in the paper is built by the `Snakefile`, in the

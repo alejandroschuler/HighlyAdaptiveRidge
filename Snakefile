@@ -176,9 +176,13 @@ SM_METHODS = ["har", "anchored_sobolev", "mixed_sobolev_depth", "mixed_sobolev",
 # left the paper in October 2026 with the rest of higher-order HAR; their fits
 # stay for paper/notes/higher-order-har.tex. Gradient boosted trees took the
 # place of the random forest in the main text on 2026-10-15, at the author's
-# request; the random forest moved to the appendix.
-PAPER_MAIN = ["har", "mixed_sobolev_depth", "rbf", "hal", "gbt", "enet"]
-PAPER_ALL = ["har", "mixed_sobolev_depth", "rbf", "hal", "mars", "rf", "gbt", "mlp", "enet"]
+# request; the random forest moved to the appendix. Since 2026-10-21 the
+# tables put the estimators that penalize sectional variation first (HAR, MS-KRR,
+# HAL, boosting), then radial basis KRR, then the others, and the elastic net
+# last (author's request). Figure 1 keeps its panel order (FIG_FITS_METHODS).
+PAPER_MAIN = ["har", "mixed_sobolev_depth", "hal", "gbt", "rbf", "enet"]
+PAPER_ALL = ["har", "mixed_sobolev_depth", "hal", "gbt", "rbf", "mars", "rf", "mlp", "enet"]
+FIG_FITS_METHODS = ["har", "mixed_sobolev_depth", "rbf", "hal", "gbt", "enet"]
 # The paper's names for the estimators whose module names them otherwise.
 PAPER_NAMES = {"mixed_sobolev_depth": "Mixed Sobolev KRR",
                "mixed_sobolev1_depth": "1st-order Mixed Sobolev KRR"}
@@ -437,13 +441,13 @@ rule sim_fits:
 
 rule fig_fits:
     input:
-        predictions=expand("results/fits/{method}.csv", method=PAPER_MAIN),
+        predictions=expand("results/fits/{method}.csv", method=FIG_FITS_METHODS),
         helpers=DISPLAY,
     output:
         figure=f"{ART}/figures/fits.pdf",
         numbers=f"{ART}/numbers/fits.tex",
     params:
-        methods=PAPER_MAIN,
+        methods=FIG_FITS_METHODS,
         names=PAPER_NAMES,
     script: "py/fig_fits.py"
 
