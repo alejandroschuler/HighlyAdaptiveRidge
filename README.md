@@ -30,8 +30,6 @@ har.predict(X_)
 | `py/*.py` | one script for each rule of the `Snakefile` |
 | `tests/` | the unit tests of the methods (`make test`) |
 | `data/` | the UCI data, not in git; see `data/README.md` |
-| `legacy/` | the 2024 notebooks that the pipeline replaced |
-| `paper/` | the Overleaf clone of the paper, a separate git repo |
 
 ## The HAR basis in the code
 
