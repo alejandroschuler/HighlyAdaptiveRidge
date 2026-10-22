@@ -1,6 +1,6 @@
 # Highly Adaptive Ridge
 
-Code for the paper *Highly Adaptive Ridge*, by Schuler, Hagemeister and van der
+Code for the paper *Highly Adaptive Ridge*, by Schuler, Wang, Hagemeister and van der
 Laan ([arXiv:2410.02680](https://arxiv.org/pdf/2410.02680)).
 
 ## Usage
