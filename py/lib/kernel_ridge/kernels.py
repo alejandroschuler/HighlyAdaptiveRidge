@@ -23,7 +23,7 @@ class Kernel:
 
     def alpha_grid(self, Y, n_alphas, eps, alpha_min=None, K=None, X=None, min_eig=None, max_eig=None):
         """
-        The grid of HAR paper appendix D: n_alphas values, log-spaced from alpha_min
+        The grid of HAR paper appendix C.1: n_alphas values, log-spaced from alpha_min
         up to lambda_0 = max_i ||K_i|| ||Y|| / (eps max_i |y_i|) - eig_n(K).
 
         alpha_min = None starts the grid at ALPHA_FLOOR * eig_1(K), so that both ends

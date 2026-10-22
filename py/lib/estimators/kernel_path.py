@@ -27,7 +27,7 @@ from sklearn.base import BaseEstimator, RegressorMixin
 from kernel_ridge.fast import _prep, coef_at, loocv_path
 
 # Each penalty grid has N_ALPHAS values, and the epsilon of its top value is EPS:
-# at the top penalty, every fitted value is within EPS max|y_i| of zero.
+# at the top penalty, every fitted value is within EPS max|y_i| of the intercept.
 N_ALPHAS = 50
 EPS = 1e-3
 
