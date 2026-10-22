@@ -23,16 +23,6 @@ STEPS = ["hal", "gbt"]
 WAVES = ["wave1", "wave2", "wave3", "wave4"]
 
 
-def pct_cell(x):
-    """(Used by notes/bias-dimension.tex on wip/bias-dimension.) A mean test MSE in percent of the truth's variance, to two significant
-    digits: 2.3, 0.95, 31, and whole numbers from 100 up."""
-    v = 100 * x
-    if v >= 10:
-        return f"{v:.0f}"
-    s = f"{v:#.2g}"     # keeps a trailing zero, as in 4.0
-    return s.rstrip(".")
-
-
 def mse_cell(x):
     """A mean test MSE, which is a fraction of the truth's variance, to two
     significant digits: 0.022, 0.090, 0.35, 1.0."""

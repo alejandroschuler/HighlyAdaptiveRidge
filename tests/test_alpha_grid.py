@@ -54,8 +54,8 @@ def test_early_stopping_records_only_the_evaluated_kernels(data):
 
 @pytest.mark.parametrize("kernel", [
     kernels.HighlyAdaptiveRidge(), kernels.HighlyAdaptiveRidge(decay=0.05), kernels.MixedSobolev(),
-    kernels.RadialBasis(1.0), kernels.Linear(),
-], ids=["HAR", "HAR-decay", "mixed-Sobolev", "RBF", "linear"])
+    kernels.RadialBasis(1.0),
+], ids=["HAR", "HAR-decay", "mixed-Sobolev", "RBF"])
 def test_the_grid_runs_from_1e_12_of_the_largest_eigenvalue_to_lambda_0(data, kernel):
     X, Y = data
     K = kernel(X)

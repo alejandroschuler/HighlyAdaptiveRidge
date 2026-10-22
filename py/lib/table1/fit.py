@@ -21,7 +21,7 @@ from .data import split
 from .design import SEED
 
 # The estimators that numba compiles, and the rows of their untimed warm-up fit.
-COMPILED = {"har", "har1", "mixed_sobolev", "rbf", "hal"}
+COMPILED = {"har", "mixed_sobolev_depth", "rbf", "hal"}
 WARM_ROWS = 60
 
 

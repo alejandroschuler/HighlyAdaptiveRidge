@@ -9,8 +9,8 @@ from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import ElasticNet, Lasso, LassoCV
 from sklearn.model_selection import KFold
 
+from basis_har import HighlyAdaptiveBaseCV
 from highly_adaptive_regression import (
-    HighlyAdaptiveBaseCV,
     HighlyAdaptiveLassoCV,
     _Basis,
     _predict,

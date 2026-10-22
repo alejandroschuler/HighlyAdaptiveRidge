@@ -1,5 +1,6 @@
-"""The dimension check of the Section 4.3 wave (notes/bias-dimension.tex): the
-wave along two covariates copied onto every pair of p covariates.
+"""The dimension check of the Section 4.3 wave (the paper's table
+tab:bias-dimension): the wave along two covariates copied onto every pair of p
+covariates.
 
 The DGP "copies<p>" has p uniform covariates (p even) and the raw truth
 

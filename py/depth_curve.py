@@ -10,12 +10,9 @@ not used.
 import pandas as pd
 
 import estimators
-from estimators import more_depth
 from estimators.folds import folds
 from table1 import data
 from table1.design import SEED
-
-more_depth.register()   # lets estimators.load find mixed_sobolev_depth
 
 w = snakemake.wildcards
 rep = int(w.rep)

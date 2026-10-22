@@ -25,9 +25,13 @@ har.predict(X_)
 |---|---|
 | `py/lib/kernel_ridge/` | HAR, and kernel ridge regression with the mixed Sobolev and radial basis kernels |
 | `py/lib/highly_adaptive_regression.py` | HAL, the highly adaptive lasso |
-| `py/lib/table1/`, `py/lib/sim/` | the experiments: the Table 1 benchmark, and the simulations |
+| `py/lib/estimators/` | the nine estimators of Section 4 and appendix C as the pipeline tunes them, one module each, and the code they share |
+| `py/lib/table1/` | the benchmark of Section 4: the benchmark table and the time table |
+| `py/lib/sim/` | the demonstration of Figure 1 |
+| `py/lib/biases/` | the simulation of Section 4.3, and its check with more covariates |
 | `py/lib/display/` | the summaries, figures and tables |
-| `py/*.py` | one script for each rule of the `Snakefile` |
+| `py/*.py` | the scripts that the rules of the `Snakefile` run |
+| `envs/mars/` | the environment of the MARS fits (pymars needs scikit-learn 1.6) |
 | `tests/` | the unit tests of the methods (`make test`) |
 | `data/` | the UCI data, not in git; see `data/README.md` |
 
@@ -41,14 +45,19 @@ not change the fit (Section 3.3 of the paper).
 ## Reproducing the paper
 
 Every figure and table in the paper is built by the `Snakefile`, in the
-environment that `uv sync` builds from `pyproject.toml` and `uv.lock`. The
+environment that `uv sync` builds from `pyproject.toml` and `uv.lock`. The MARS
+fits run in a second environment, which `uv sync` builds when run inside `envs/mars/`. The
 `make` targets run each build and check its output:
 
 ```
 make build    # the paper's figures and tables, on main
-make notes    # the experiments for the referee, on a wip branch
 make status   # what is current, and what a build would redo
 ```
 
-`CLAUDE.md` has the rules of the pipeline. A full build of Table 1 takes about
-two hours. Datasets are available from the UCI repository.
+`CLAUDE.md` has the rules of the pipeline. Each fit is one job on one thread,
+so that the fit times compare. HAL stops its search over depths on a budget of
+20 minutes per fit. Its first depth always runs, and on naval that first depth
+takes about an hour. The cells of the Section 4.3 simulation take about 3 hours
+on 10 cores, and its check with more covariates takes about 2 hours. The
+datasets are available from the UCI repository, and `data/README.md` says
+where to put them.

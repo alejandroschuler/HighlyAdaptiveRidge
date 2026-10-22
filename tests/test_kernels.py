@@ -80,8 +80,3 @@ def test_LOOCV_for_HAR_vs_kernel_HAR(data):
     rmse_diff = np.sqrt(np.mean((Y_har - Y_khar)**2))
     assert rmse_diff / np.std(Y) < 0.1, "RMSE difference is too large between HAR and Kernel HAR."
     assert np.abs((rmse_har - rmse_khar) / rmse_har) < 1e-2, "RMSEs between HAR and Kernel HAR are not sufficiently close."
-
-# @pytest.mark.parametrize("data", param_sets_with_seeds, indirect=True)
-# def test_krr_rbf(data):
-#     X, X_, Y, Y_ = data
-#     KRR(kernel=GaussianKernel).fit(X,Y)

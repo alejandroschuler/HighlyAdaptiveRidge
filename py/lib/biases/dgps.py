@@ -92,12 +92,8 @@ def wave_moments(k, periods):
     return 0.0, float(np.sqrt((1 - (np.sin(b) / b) ** k) / 2))
 
 
-# The waves: name -> (k, periods). The main run has the waves at WAVE_PERIODS.
-# The frequency check of appendix C has them at CHECK_PERIODS, named
-# wave<k>f<10 x periods>, such as wave3f15 for k = 3 at 1.5 periods.
-CHECK_PERIODS = [1.5, 2.0, 3.0]
+# The waves: name -> (k, periods), all at WAVE_PERIODS.
 WAVES = {f"wave{k}": (k, WAVE_PERIODS) for k in range(1, P + 1)}
-WAVES.update({f"wave{k}f{round(10 * m)}": (k, m) for m in CHECK_PERIODS for k in range(1, P + 1)})
 
 
 # ---- claims 2 and 3: rule ensembles, one copy on each pair of covariates

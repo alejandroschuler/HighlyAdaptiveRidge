@@ -12,12 +12,9 @@ import numpy as np
 import pandas as pd
 
 import estimators
-from estimators import more_depth
 from estimators.folds import folds
 
 from . import design, dgps
-
-more_depth.register()   # mixed Sobolev KRR with depth is registered there
 
 # Settings of the chosen fit that are too long for a row of the results.
 DROP = {"xgboost_config"}

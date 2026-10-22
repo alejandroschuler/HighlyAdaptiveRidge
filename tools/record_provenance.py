@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Check a write before it happens, record what it produced, merge the records.
 
-Provenance is implemented once, here, and both language front-ends call it.
-artefacts.py imports it; artefacts.R shells out to it. Two implementations of
-"what commit built this" would drift, and the drift would be invisible until
-the day it mattered.
+Provenance is implemented once, here, and the front-end calls it:
+artefacts.py imports it. A second implementation of "what commit built this"
+would drift, and the drift would be invisible until the day it mattered.
 
 validate_write() is the last of three places that enforce the tier rules, and
 the only one nothing can go around. The Makefile and the Snakefile's `onstart`

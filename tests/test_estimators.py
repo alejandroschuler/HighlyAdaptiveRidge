@@ -96,6 +96,8 @@ def test_hal_depth_walk_keeps_the_depth_with_the_smallest_risk(data):
 
 @pytest.mark.parametrize("slug", SLUGS)
 def test_every_estimator_fits_and_reports(data, slug):
+    if slug == "mars":
+        pytest.importorskip("pymars")   # only the environment of envs/mars has it
     X, Y = data
     module = load(slug)
     m = module.learner(folds(len(Y), 0), 0, X.shape[1]).fit(X, Y)

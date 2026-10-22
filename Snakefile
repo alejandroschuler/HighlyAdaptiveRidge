@@ -8,7 +8,6 @@ import subprocess
 import sys
 
 ART = "paper/artefacts"
-NOTES = "paper/notes/artefacts"
 
 # Python scripts import the helpers with `import artefacts`. Snakemake runs each
 # script under its own interpreter and puts only the script's folder on
@@ -31,7 +30,7 @@ NUMBERS = ["kernel-scale",             # the scale of the plain HAR kernel matri
            "biases",                   # Section 4.3: its ratios, edge checks and settings
            "bias-truths",              # the settings of its figure of the truths
            "bias-dimension"]           # its claim 1 with more covariates
-FIGURES = ["fits", "convergence",      # Figures 1 and 2
+FIGURES = ["fits",                     # Figure 1
            "depth",                    # cross-validated error against the depth
            "bias-truths-waves",        # the truths of Section 4.3, one figure
            "bias-truths-rules",        # for each claim
@@ -44,21 +43,12 @@ TABLES = ["empirical", "runtime",      # Table 1 (relative test MSE) and the fit
           "bias-density",
           "bias-dimension"]            # claim 1 with more covariates
 
-# Exploratory output. Deliberately not part of `rule all`: a manuscript build
-# should not drag along months of abandoned exploration. These two are the
-# experiments the referee asked for (comment 7 of the first report).
-NOTES_NUMBERS = ["sobolev-mars", "sobolev-mars-fits"]   # notes/sobolev-mars.tex
-NOTES_FIGURES = ["noise-sweep", "dimension-sweep",
-                 "sobolev-mars-fits"]                  # notes/sobolev-mars.tex
-NOTES_TABLES = ["sobolev-mars-rmse", "sobolev-mars-runtime",
-                "sobolev-mars-ratios"]                 # notes/sobolev-mars.tex
-
 
 def lib(*dirs):
     """Every file under these topic directories, as rule inputs.
 
     Snakemake's `code` rerun trigger hashes the script file and nothing it
-    sources or imports. Change a function in R/lib/estimate and the script
+    sources or imports. Change a function in py/lib/kernel_ridge and the script
     hashes the same, so Snakemake reports the artefact as up to date when it is
     not. A false-fresh number is worse than no tracking at all, because it is
     the kind of wrong you stop checking for.
@@ -68,14 +58,14 @@ def lib(*dirs):
     direction: editing any estimation helper marks every fit stale, and nothing
     that read a file is ever missed.
 
-    The lever on precision is directory structure. If R/lib/estimate is too
-    blunt, split it into estimate/ipw and estimate/tmle and have each rule
-    depend on what it uses.
+    The lever on precision is directory structure. If py/lib/estimators is too
+    blunt, split it into its files, one for each estimator, as ESTIMATOR_CODE
+    below does, and have each rule depend on what it uses.
     """
     out = []
     for d in dirs:
-        # A single file is a legitimate argument. Globbing "file.R/**/*" matches
-        # nothing, so without this a lib("R/lib/artefacts.R") would silently
+        # A single file is a legitimate argument. Globbing "file.py/**/*" matches
+        # nothing, so without this a lib("py/lib/artefacts.py") would silently
         # declare no dependency at all, which is the exact silent
         # under-declaration this helper exists to prevent.
         if Path(d).is_file():
@@ -91,7 +81,7 @@ def lib(*dirs):
             # staleness report.
             if any(part.startswith(".") or part == "__pycache__" for part in q.parts):
                 continue
-            if q.suffix in {".pyc", ".pyo", ".so", ".o", ".rdb", ".rdx"}:
+            if q.suffix in {".pyc", ".pyo", ".so", ".o"}:
                 continue
             out.append(f)
     return sorted(out)
@@ -103,89 +93,48 @@ def lib(*dirs):
 KRR = lib("py/lib/kernel_ridge")                        # HAR and the other kernel ridge methods
 HAL = lib("py/lib/highly_adaptive_regression.py")       # HAL
 T1 = "py/lib/table1"
-TABLE1_FIT = lib(f"{T1}/__init__.py", f"{T1}/design.py", f"{T1}/data.py", f"{T1}/fit.py")
-SIM = lib("py/lib/sim") + KRR + HAL                     # the simulations; cheap, so declared broadly
+TABLE1_DATA = lib(f"{T1}/__init__.py", f"{T1}/design.py", f"{T1}/data.py")
+TABLE1_FIT = TABLE1_DATA + lib(f"{T1}/fit.py")
 DEMO = lib("py/lib/sim/__init__.py", "py/lib/sim/design.py", "py/lib/sim/dgps.py", "py/lib/sim/demo.py")
 DISPLAY = lib("py/lib/display", "py/lib/artefacts.py")  # summaries, figures and tables
 
-# The estimators of Section 4, one module each in py/lib/estimators. Each rule
-# that fits an estimator declares that estimator's code and nothing else, so an
-# edit to one estimator reruns only its fits.
+# The estimators of Section 4 and appendix C, one module each in
+# py/lib/estimators. Each rule that fits an estimator declares that estimator's
+# code and nothing else, so an edit to one estimator reruns only its fits.
+# pymars needs a newer scikit-learn than the main environment pins, so the MARS
+# fits run under the interpreter of envs/mars, and they declare its lock file.
 EST = "py/lib/estimators"
 EST_BASE = lib(f"{EST}/__init__.py", f"{EST}/folds.py")
 KPATH = EST_BASE + KRR + lib(f"{EST}/kernel_path.py")
 ESTIMATOR_CODE = {
     "har": KPATH + lib(f"{EST}/depths.py", f"{EST}/har.py"),
-    "har1": KPATH + lib(f"{EST}/depths.py", f"{EST}/har1.py"),
-    "mixed_sobolev": KPATH + lib(f"{EST}/mixed_sobolev.py"),
-    "rbf": KPATH + lib(f"{EST}/rbf.py"),
+    "mixed_sobolev_depth": KPATH + lib(f"{EST}/depths.py", f"{EST}/sobolev_depth.py",
+                                       f"{EST}/mixed_sobolev_depth.py"),
     "hal": EST_BASE + HAL + lib(f"{EST}/hal.py"),
-    "rf": EST_BASE + lib(f"{EST}/rf.py"),
     "gbt": EST_BASE + lib(f"{EST}/gbt.py"),
+    "rbf": KPATH + lib(f"{EST}/rbf.py"),
+    "mars": EST_BASE + lib(f"{EST}/depths.py", f"{EST}/mars.py", "envs/mars/pyproject.toml",
+                           "envs/mars/uv.lock"),
+    "rf": EST_BASE + lib(f"{EST}/rf.py"),
     "mlp": EST_BASE + lib(f"{EST}/mlp.py"),
     "enet": EST_BASE + lib(f"{EST}/enet.py"),
 }
-ESTIMATORS = list(ESTIMATOR_CODE)   # the order of Section 4
-
-# The four estimators that notes/sobolev-mars.tex adds, one module each in
-# py/lib/estimators: kernel ridge with the anchored mixed Sobolev kernels, the
-# limits of HAR and first-order HAR with their depth weights, kernel ridge with
-# the first-order mixed Sobolev kernel of the usual norm, and MARS. They are
-# not in estimators.SLUGS, the paper's list, which every Table 1 fit reads, so
-# their rules run py/more_fits.py, which registers them first. pymars needs a
-# newer scikit-learn than the main environment pins, so the MARS fits run
-# under the interpreter of envs/mars, and they declare its lock file.
-MORE_BASE = lib(f"{EST}/more.py", "py/more_fits.py")
-SOBOLEV = KPATH + lib(f"{EST}/sobolev_kernels.py")
-MORE_CODE = {
-    "anchored_sobolev": SOBOLEV + lib(f"{EST}/depths.py", f"{EST}/anchored_sobolev.py"),
-    "mixed_sobolev1": SOBOLEV + lib(f"{EST}/mixed_sobolev1.py"),
-    "anchored_sobolev1": SOBOLEV + lib(f"{EST}/depths.py", f"{EST}/anchored_sobolev1.py"),
-    "mars": EST_BASE + lib(f"{EST}/depths.py", f"{EST}/mars.py", "envs/mars/pyproject.toml",
-                           "envs/mars/uv.lock"),
-}
-MORE = list(MORE_CODE)
+ESTIMATORS = list(ESTIMATOR_CODE)   # the order of the full tables, PAPER_ALL
 MARS_PYTHON = "envs/mars/.venv/bin/python"
 
-# The estimators that the note added second, at the user's request: the
-# usual-norm mixed Sobolev kernels with HAR's depth weights, of orders 0 and 1,
-# so that the comparison of the anchored and the usual-norm kernels is not
-# also one of depth tuning. They have their own registry and fit script
-# (py/added_fits.py), so that the fits of MORE, which read estimators/more.py
-# and py/more_fits.py, do not rerun.
-DEPTH_BASE = lib(f"{EST}/more_depth.py", "py/added_fits.py")
-DEPTH_SOBOLEV = SOBOLEV + lib(f"{EST}/sobolev_depth.py", f"{EST}/depths.py")
-DEPTH_CODE = {
-    "mixed_sobolev_depth": DEPTH_SOBOLEV + lib(f"{EST}/mixed_sobolev_depth.py"),
-    "mixed_sobolev1_depth": DEPTH_SOBOLEV + lib(f"{EST}/mixed_sobolev1_depth.py"),
-}
-DEPTH = list(DEPTH_CODE)
-
-# The note's columns and panels: each HAR next to its limit kernel and the two
-# kernels of the usual norm, with and without depth, then the other estimators
-# in the order of Section 4.
-SM_METHODS = ["har", "anchored_sobolev", "mixed_sobolev_depth", "mixed_sobolev",
-              "har1", "anchored_sobolev1", "mixed_sobolev1_depth", "mixed_sobolev1",
-              "rbf", "hal", "mars", "rf", "gbt", "mlp", "enet"]
-
 # The paper's Section 4: the estimators of the main text, in its order, and all
-# of them with the additional comparators of the appendix ("Additional
-# Empirical Results"), with the methods of one kind together. Mixed Sobolev KRR
-# is the version with depth tuning; the plain kernel (mixed_sobolev) is no
-# longer in the paper. The first-order estimators (har1, mixed_sobolev1_depth)
-# left the paper in October 2026 with the rest of higher-order HAR; their fits
-# stay for paper/notes/higher-order-har.tex. Gradient boosted trees took the
-# place of the random forest in the main text on 2026-10-15, at the author's
-# request; the random forest moved to the appendix. Since 2026-10-21 the
-# tables put the estimators that penalize sectional variation first (HAR, MS-KRR,
-# HAL, boosting), then radial basis KRR, then the others, and the elastic net
-# last (author's request). Figure 1 keeps its panel order (FIG_FITS_METHODS).
+# of them with the additional comparators of appendix C, with the methods of
+# one kind together. The tables put the estimators that penalize sectional
+# variation first (HAR, MS-KRR, HAL, boosting), then radial basis KRR, then the
+# others, and the elastic net last (author's request, 2026-10-21). Gradient
+# boosted trees are in the main text and the random forest in the appendix
+# (author's request, 2026-10-15). Figure 1 keeps its panel order
+# (FIG_FITS_METHODS).
 PAPER_MAIN = ["har", "mixed_sobolev_depth", "hal", "gbt", "rbf", "enet"]
 PAPER_ALL = ["har", "mixed_sobolev_depth", "hal", "gbt", "rbf", "mars", "rf", "mlp", "enet"]
 FIG_FITS_METHODS = ["har", "mixed_sobolev_depth", "rbf", "hal", "gbt", "enet"]
 # The paper's names for the estimators whose module names them otherwise.
-PAPER_NAMES = {"mixed_sobolev_depth": "Mixed Sobolev KRR",
-               "mixed_sobolev1_depth": "1st-order Mixed Sobolev KRR"}
+PAPER_NAMES = {"mixed_sobolev_depth": "Mixed Sobolev KRR"}
 
 
 # ---------------------------------------------------------------------------
@@ -201,9 +150,8 @@ TABLE1_DATASETS = [
 ]
 TABLE1_REPS = list(range(5))
 # The fits that are not run. HAL's implementation handles at most 63
-# covariates. A first-order HAR kernel on slice takes minutes to build on one
-# core, so even its first depth would take the fit far past its time budget.
-TABLE1_SKIP = {("yearmsd", "hal"), ("slice", "hal"), ("slice", "har1")}
+# covariates.
+TABLE1_SKIP = {("yearmsd", "hal"), ("slice", "hal")}
 
 
 def fits_of(methods):
@@ -211,24 +159,14 @@ def fits_of(methods):
     return [(d, m) for d in TABLE1_DATASETS for m in methods if (d, m) not in TABLE1_SKIP]
 
 
-TABLE1_FITS = fits_of(ESTIMATORS)   # the nine estimators fit first; the note reads these
 PAPER_FITS = fits_of(PAPER_ALL)     # what the paper's tables read
 
 
-def table1_files(kind, cells=None):
-    """The result or tuning file of every Table 1 fit of these cells (default: the paper's)."""
+def table1_files(kind):
+    """The result or tuning file of every Table 1 fit that the paper's tables read."""
     suffix = "" if kind == "result" else "-tuning"
-    cells = PAPER_FITS if cells is None else cells
-    return [f"results/table1/{d}/{m}/rep{r}{suffix}.csv" for d, m in cells for r in TABLE1_REPS]
+    return [f"results/table1/{d}/{m}/rep{r}{suffix}.csv" for d, m in PAPER_FITS for r in TABLE1_REPS]
 
-# Figure 2 and the noise sweep are one simulation over (sigma, n).
-CONVERGENCE_N = [50, 125, 200, 300, 400, 600]
-CONVERGENCE_SIGMA = ["0.1"]            # Figure 2
-NOISE_SIGMA = ["0.1", "0.5", "1.0"]    # the noise sweep
-
-# The dimension sweep.
-DIMENSION_DGPS = ["interaction", "additive"]
-DIMENSION_P = [5, 8, 10, 15, 20, 30]
 
 # Every job runs on one thread: the linear algebra (Accelerate, OpenBLAS, MKL),
 # OpenMP and numba. Jobs run in parallel, one to a core, so the time of each
@@ -241,10 +179,7 @@ wildcard_constraints:
     dataset=r"[a-z0-9]+",
     method=r"[a-z0-9_]+",
     rep=r"\d+",
-    sigma=r"[0-9.]+",
-    n=r"\d+",
     dgp=r"[a-z]+",
-    p=r"\d+",
 
 
 onstart:
@@ -282,11 +217,15 @@ rule all:
         *([f"{ART}/artefacts.tex"] if NUMBERS else []),
 
 
+# No rule builds a notes artefact any more. The notes' artefacts were built on
+# their wip branches, whose commits still exist, so their stamps hold. The rule
+# stays because the checkers (tools/artefact_status.py and tools/check_deps.py)
+# dry-run `all notes`, and `make notes` builds it. Its input is this file and
+# nothing else: a target with neither input nor output is scheduled on every
+# run, and one with an existing input and no output is not.
 rule notes:
     input:
-        expand(f"{NOTES}/numbers/{{u}}.tex", u=NOTES_NUMBERS),
-        expand(f"{NOTES}/figures/{{f}}.pdf", f=NOTES_FIGURES),
-        expand(f"{NOTES}/tables/{{t}}.tex", t=NOTES_TABLES),
+        "Snakefile",
 
 
 rule artefacts_tex:
@@ -311,28 +250,32 @@ rule artefacts_tex:
 # so a change to a table's format reruns no fit, and a change to one
 # estimator reruns only its fits.
 
-def _fit_code(wc):
-    return ESTIMATOR_CODE[wc.method] + TABLE1_FIT
+# The fit rules run their scripts from a shell command, so that the MARS fits
+# can run under the interpreter of envs/mars. Snakemake hashes a shell command
+# and not the script that it calls, so each rule declares its script as an
+# input. The jobs get PYTHONPATH and the thread settings from os.environ above.
+
+def _python(wc):
+    """The interpreter of an estimator's fits."""
+    return MARS_PYTHON if wc.method == "mars" else sys.executable
 
 
 rule table1_fit:
     input:
         data=f"{DATA}/{{dataset}}.csv",
-        helpers=_fit_code,
+        code="py/table1_fit.py",
+        helpers=lambda wc: ESTIMATOR_CODE[wc.method] + TABLE1_FIT,
     output:
         result="results/table1/{dataset}/{method}/rep{rep}.csv",
         tuning="results/table1/{dataset}/{method}/rep{rep}-tuning.csv",
     wildcard_constraints:
-        method="|".join(m for m in ESTIMATORS if m != "har1"),
+        method="|".join(ESTIMATORS),
+    params:
+        python=_python,
     threads: 1
-    script: "py/table1_fit.py"
-
-
-# First-order HAR has the longest fits, so its jobs start first.
-use rule table1_fit as table1_fit_har1 with:
-    wildcard_constraints:
-        method="har1",
-    priority: 10
+    shell:
+        "{params.python} py/table1_fit.py {input.data} {wildcards.dataset} {wildcards.method}"
+        " {wildcards.rep} {output.result} {output.tuning}"
 
 
 rule table_empirical:
@@ -363,16 +306,12 @@ rule table_empirical:
 # Table 1 fit follows until it stops.
 
 DEPTH_CURVE_METHODS = ["har", "mixed_sobolev_depth"]
-DEPTH_CURVE_CODE = {
-    "har": ESTIMATOR_CODE["har"],
-    "mixed_sobolev_depth": DEPTH_CODE["mixed_sobolev_depth"],
-}
 
 
 rule depth_curve:
     input:
         data=f"{DATA}/{{dataset}}.csv",
-        helpers=lambda wc: DEPTH_CURVE_CODE[wc.method] + lib(f"{EST}/more_depth.py") + TABLE1_FIT,
+        helpers=lambda wc: ESTIMATOR_CODE[wc.method] + TABLE1_DATA,
     output:
         "results/depth/{dataset}/{method}/rep{rep}.csv",
     wildcard_constraints:
@@ -430,13 +369,17 @@ rule kernel_scale:
 
 rule sim_fits:
     input:
+        code="py/sim_fits.py",
         helpers=lambda wc: ESTIMATOR_CODE[wc.method] + DEMO,
     output:
         "results/fits/{method}.csv",
     wildcard_constraints:
         method="|".join(ESTIMATORS),
+    params:
+        python=_python,
     threads: 1
-    script: "py/sim_fits.py"
+    shell:
+        "{params.python} py/sim_fits.py {wildcards.method} {output}"
 
 
 rule fig_fits:
@@ -473,11 +416,7 @@ BIAS_BLOCKS = list(range(BIAS_REPS // BIAS_BLOCK))
 BIAS_EDGE = {"rbf_wide": ["wave1"], "gbt_deep": ["wave3", "wave4"]}
 
 BIAS_DGP_CODE = lib("py/lib/biases/__init__.py", "py/lib/biases/design.py", "py/lib/biases/dgps.py")
-BIAS_CELL = BIAS_DGP_CODE + lib("py/lib/biases/cell.py", f"{EST}/more_depth.py")
-BIAS_CODE = {
-    **{m: ESTIMATOR_CODE[m] for m in ["har", "hal", "gbt", "rbf"]},
-    "mixed_sobolev_depth": DEPTH_CODE["mixed_sobolev_depth"],
-}
+BIAS_CELL = BIAS_DGP_CODE + lib("py/lib/biases/cell.py")
 BIAS_EDGE_CODE = (ESTIMATOR_CODE["rbf"] + ESTIMATOR_CODE["gbt"] + BIAS_CELL
                   + lib("py/lib/biases/variants.py"))
 
@@ -497,7 +436,7 @@ def bias_files(kind):
 
 rule bias_cell:
     input:
-        helpers=lambda wc: BIAS_CODE[wc.method] + BIAS_CELL,
+        helpers=lambda wc: ESTIMATOR_CODE[wc.method] + BIAS_CELL,
     output:
         result="results/biases/{dgp}/{method}/block{block}.csv",
         tuning="results/biases/{dgp}/{method}/block{block}-tuning.csv",
@@ -576,7 +515,7 @@ def copies_files(kind):
 
 rule copies_cell:
     input:
-        helpers=lambda wc: BIAS_CODE[wc.method] + COPIES_CELL,
+        helpers=lambda wc: ESTIMATOR_CODE[wc.method] + COPIES_CELL,
     output:
         result="results/bias-copies/{dgp}/{method}/block{block}.csv",
         tuning="results/bias-copies/{dgp}/{method}/block{block}-tuning.csv",
@@ -593,8 +532,9 @@ rule copies_cell:
 rule table_bias_dimension:
     input:
         results=copies_files("result"),
-        helpers=DISPLAY + COPIES_CELL + lib("py/lib/biases/summary.py", "py/lib/biases/report.py",
-                                            "py/lib/biases/copies_display.py"),
+        helpers=DISPLAY + lib("py/lib/biases/__init__.py", "py/lib/biases/design.py",
+                              "py/lib/biases/summary.py", "py/lib/biases/report.py",
+                              "py/lib/biases/copies_display.py"),
     output:
         table=f"{ART}/tables/bias-dimension.tex",
         numbers=f"{ART}/numbers/bias-dimension.tex",
@@ -602,166 +542,3 @@ rule table_bias_dimension:
         methods=COPIES_METHODS,
         names=PAPER_NAMES,
     script: "py/table_bias_dimension.py"
-
-
-# ---------------------------------------------------------------------------
-# Figure 2 (fig:convergence) and the noise sweep share one simulation, whose
-# cells are (sigma, n). Figure 2 reads the cells at sigma = 0.1.
-
-rule sim_convergence:
-    input:
-        helpers=SIM,
-    output:
-        "results/convergence/sigma{sigma}/n{n}.csv",
-    threads: workflow.cores
-    script: "py/sim_convergence.py"
-
-
-rule fig_convergence:
-    input:
-        cells=expand("results/convergence/sigma{sigma}/n{n}.csv",
-                     sigma=CONVERGENCE_SIGMA, n=CONVERGENCE_N),
-        helpers=DISPLAY,
-    output:
-        f"{ART}/figures/convergence.pdf",
-    script: "py/fig_convergence.py"
-
-
-rule fig_noise_sweep:
-    input:
-        cells=expand("results/convergence/sigma{sigma}/n{n}.csv",
-                     sigma=NOISE_SIGMA, n=CONVERGENCE_N),
-        helpers=DISPLAY,
-    output:
-        f"{NOTES}/figures/noise-sweep.pdf",
-    script: "py/fig_noise_sweep.py"
-
-
-# ---------------------------------------------------------------------------
-# The dimension sweep: HAR and mixed Sobolev KRR against the other methods the
-# referee asked for, on two DGPs, as the number of covariates grows.
-
-rule sim_dimension:
-    input:
-        helpers=SIM,
-    output:
-        "results/dimension/{dgp}/p{p}.csv",
-    threads: workflow.cores
-    script: "py/sim_dimension.py"
-
-
-rule fig_dimension_sweep:
-    input:
-        cells=expand("results/dimension/{dgp}/p{p}.csv", dgp=DIMENSION_DGPS, p=DIMENSION_P),
-        helpers=DISPLAY,
-    output:
-        f"{NOTES}/figures/dimension-sweep.pdf",
-    script: "py/fig_dimension_sweep.py"
-
-
-# ---------------------------------------------------------------------------
-# notes/sobolev-mars.tex: Table 1, the time table and Figure 1 with the four
-# added estimators (MORE) next to the nine of Section 4. The added fits are
-# jobs of the same shape as the paper's, on one thread each, and they write
-# results/ in the same layout, so the note's displays read the paper's fits as
-# they stand.
-
-SM_FITS = TABLE1_FITS + [(d, m) for d in TABLE1_DATASETS for m in MORE + DEPTH]
-
-
-def sm_files(kind):
-    """The result or tuning file of every fit that the note's tables read."""
-    suffix = "" if kind == "result" else "-tuning"
-    return [f"results/table1/{d}/{m}/rep{r}{suffix}.csv" for d, m in SM_FITS for r in TABLE1_REPS]
-
-
-def _more_python(wc):
-    """The interpreter of an added estimator's fits."""
-    return MARS_PYTHON if wc.method == "mars" else sys.executable
-
-
-rule table1_fit_more:
-    input:
-        data=f"{DATA}/{{dataset}}.csv",
-        helpers=lambda wc: MORE_CODE[wc.method] + MORE_BASE + TABLE1_FIT,
-    output:
-        result="results/table1/{dataset}/{method}/rep{rep}.csv",
-        tuning="results/table1/{dataset}/{method}/rep{rep}-tuning.csv",
-    wildcard_constraints:
-        method="|".join(MORE),
-    params:
-        python=_more_python,
-    threads: 1
-    shell:
-        "{params.python} py/more_fits.py table1 {input.data} {wildcards.dataset} {wildcards.method}"
-        " {wildcards.rep} {output.result} {output.tuning}"
-
-
-rule sim_fits_more:
-    input:
-        helpers=lambda wc: MORE_CODE[wc.method] + MORE_BASE + DEMO,
-    output:
-        "results/fits/{method}.csv",
-    wildcard_constraints:
-        method="|".join(MORE),
-    params:
-        python=_more_python,
-    threads: 1
-    shell:
-        "{params.python} py/more_fits.py fits {wildcards.method} {output}"
-
-
-rule table1_fit_depth:
-    input:
-        data=f"{DATA}/{{dataset}}.csv",
-        helpers=lambda wc: DEPTH_CODE[wc.method] + DEPTH_BASE + TABLE1_FIT,
-    output:
-        result="results/table1/{dataset}/{method}/rep{rep}.csv",
-        tuning="results/table1/{dataset}/{method}/rep{rep}-tuning.csv",
-    wildcard_constraints:
-        method="|".join(DEPTH),
-    threads: 1
-    shell:
-        f"{sys.executable} py/added_fits.py more_depth table1 {{input.data}} {{wildcards.dataset}}"
-        " {wildcards.method} {wildcards.rep} {output.result} {output.tuning}"
-
-
-rule sim_fits_depth:
-    input:
-        helpers=lambda wc: DEPTH_CODE[wc.method] + DEPTH_BASE + DEMO,
-    output:
-        "results/fits/{method}.csv",
-    wildcard_constraints:
-        method="|".join(DEPTH),
-    threads: 1
-    shell:
-        f"{sys.executable} py/added_fits.py more_depth fits {{wildcards.method}} {{output}}"
-
-
-rule sm_tables:
-    input:
-        results=sm_files("result"),
-        tunings=sm_files("tuning"),
-        helpers=DISPLAY,
-    output:
-        rmse=f"{NOTES}/tables/sobolev-mars-rmse.tex",
-        runtime=f"{NOTES}/tables/sobolev-mars-runtime.tex",
-        ratios=f"{NOTES}/tables/sobolev-mars-ratios.tex",
-        numbers=f"{NOTES}/numbers/sobolev-mars.tex",
-    params:
-        datasets=TABLE1_DATASETS,
-        methods=SM_METHODS,
-        added=MORE + DEPTH,
-    script: "py/sm_tables.py"
-
-
-rule sm_fig_fits:
-    input:
-        predictions=expand("results/fits/{method}.csv", method=SM_METHODS),
-        helpers=DISPLAY,
-    output:
-        figure=f"{NOTES}/figures/sobolev-mars-fits.pdf",
-        numbers=f"{NOTES}/numbers/sobolev-mars-fits.tex",
-    params:
-        methods=SM_METHODS,
-    script: "py/sm_fig_fits.py"

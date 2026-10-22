@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Highly adaptive ridge regression, and the pipeline behind the paper"
 requires-python = "==3.12.*"
 # The numerical stack is pinned to the versions that produced the June 2026
-# reproduction (results/legacy/2026-06-repro), so reruns give the same numbers.
+# reproduction of the paper's first results, so reruns give the same numbers.
 # Snakemake is here too: the pipeline runs each Python rule under Snakemake's
 # own interpreter, so that interpreter has to have these packages.
 dependencies = [

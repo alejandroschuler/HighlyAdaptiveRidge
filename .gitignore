@@ -28,23 +28,16 @@
 # Files a build can leave behind. Untracked files make the tree dirty, and the
 # helpers refuse to write from a dirty tree.
 /logs/
-Rplots.pdf
 .snakemake/
 __pycache__/
-.Rhistory
-.RData
-.Rproj.user/
 .DS_Store
 
 # Python environments. `uv sync` builds .venv from pyproject.toml and uv.lock.
-# venv/ is the environment the code used before the pipeline.
 .venv/
-venv/
 
 # Python and tool caches
 *.py[cod]
 .pytest_cache/
-.ipynb_checkpoints/
 .mypy_cache/
 *.pickle
 

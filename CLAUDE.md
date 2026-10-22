@@ -111,22 +111,19 @@ repair for each state. Load it when a task needs more than these rules.
   `tab:empirical-full`, `tab:runtime-full`), on eleven datasets and five
   repetitions. The benchmark table gives the mean test MSE as a multiple of
   the row's best; it is Table 5, since the four tables of Section 4.3 come
-  first. Higher-order HAR left the paper in October 2026: first-order HAR (`har1`) and first-order mixed Sobolev
-  KRR (`mixed_sobolev1_depth`) are still fit, for the full tables of
-  `paper/notes/higher-order-har.tex`. Each fit is one Snakemake
-  job on one thread, so that the times compare, and the Snakefile runs every
-  job on one thread. HAL, first-order HAR and first-order mixed Sobolev KRR stop
-  their depth walks on a 20-minute budget per fit, but a first depth always
-  runs: HAL's first depth on naval takes about an hour. Each fit rule declares
-  only its estimator's code, so an edit to one estimator reruns only its fits.
-  Keep it that way. Every fit reads `estimators/__init__.py`, so the estimators
-  added in October 2026 (mixed Sobolev KRR with depth, its first-order version,
-  MARS) are registered by `estimators/more.py` and `estimators/more_depth.py`
-  instead, and MARS runs in `envs/mars` (pymars needs scikit-learn 1.6). The
-  depth figure (`fig:depth`) is 110 more jobs (`results/depth/`). Run the fits
-  with fewer jobs than free cores (other sessions share this machine), with
-  `SNAKEMAKE_FLAGS=--keep-going`, and with `BUILD_TARGETS` naming the paper's
-  artefacts, since the unused convergence figure has no results on disk.
+  first. Each estimator is one module of `py/lib/estimators/`, and
+  `estimators/__init__.py` lists them in the paper's order. Mixed Sobolev KRR
+  is `mixed_sobolev_depth`, with the kernel `UsualSobolevDepth` of
+  `estimators/sobolev_depth.py`. The rule `table1_fit` fits all nine, and
+  `sim_fits` makes the fits of Figure 1. Each fit is one Snakemake job on one
+  thread, so that the times compare, and the Snakefile runs every job on one
+  thread. Each fit declares only its estimator's code (`ESTIMATOR_CODE`), so
+  an edit to one estimator reruns only its fits. Keep it that way. MARS runs
+  in `envs/mars` (pymars needs scikit-learn 1.6). HAL stops its depth walk on
+  a 20-minute budget per fit, but a first depth always runs: HAL's first depth
+  on naval takes about an hour. The depth figure (`fig:depth`) is 110 more
+  jobs (`results/depth/`). Run the fits with fewer jobs than free cores (other
+  sessions share this machine) and with `SNAKEMAKE_FLAGS=--keep-going`.
 - Section 4.3 (one table for each claim, `tab:bias-waves`, `tab:bias-rules`
   and `tab:bias-density`, and one figure of the truths for each claim,
   `fig:bias-truths-waves`, `-rules` and `-density`; the scaling of the truths
@@ -137,11 +134,9 @@ repair for each state. Load it when a task needs more than these rules.
   adapted from `paper/notes/inductive-bias.tex` to the Section 4.1 estimators
   (HAR, MS-KRR, HAL, gradient boosted trees, radial basis KRR) tuned as there.
   Code in `py/lib/biases/`, rules `bias_cell`, `bias_edge`, `table_biases` and
-  `fig_bias_truths`; 960 fits in blocks of 10 repetitions. The frequency
-  check of the waves left the paper in October 2026, and its rules went with
-  it, but `py/lib/biases/dgps.py` still defines its waves (`CHECK_PERIODS`),
-  because every bias job reads that file, so an edit to it reruns them all
-  (about 3 hours on 10 cores). Snakemake
+  `fig_bias_truths`; 960 cells of 10 repetitions each, about 3 hours on
+  10 cores. Every bias job, the copies cells below included, declares
+  `py/lib/biases/dgps.py`, so an edit to it reruns them all. Snakemake
   reads a `script:` file when the build starts, so an edit to
   `py/table_biases.py` during a build reaches the artefact only after
   `SNAKEMAKE_FLAGS="--forcerun table_biases"`. Its tables print the mean
@@ -154,21 +149,20 @@ repair for each state. Load it when a task needs more than these rules.
   hours), with their own run function so that the other bias cells do not
   rerun, and its table and numbers are `table_bias_dimension`. The cells were
   run on `wip/bias-dimension` (kept for the stamps of its notes), and the
-  cell files came to `main` unchanged with their October 15 mtimes restored,
-  so a fresh checkout of those files makes Snakemake rerun all 400 cells
-  unless their mtimes are set back.
-- `make test` has no known failures. On a branch without the LOOCV fix of
+  cell files came to `main` unchanged.
+- The code cleanup of October 2026 ended with
+  `make build SNAKEMAKE_FLAGS=--touch` on `main`, which marked every job
+  current (Snakemake recorded each job's inputs, params and code), so a
+  rebuild reruns nothing until the code changes again.
+- The Snakefile builds no notes artefacts. `rule notes` has no outputs, so
+  `make notes` builds nothing. The rule stays because the checkers dry-run
+  `all notes`. The notes keep their artefacts in `paper/notes/artefacts/`,
+  and the stamps of those artefacts point at the wip branches, which stay.
+- `make test` has no known failures. The MARS case of `test_estimators` is
+  skipped, because `.venv` has no pymars. On a branch without the LOOCV fix of
   October 2026, `test_LOOCV_for_HAR_vs_kernel_HAR[data9]` fails, a degenerate
   case (n = 3, d = 16, pure noise).
-- `results/legacy/` holds the output from before the pipeline: the 2024
-  notebook runs and the seeded reproduction of June 2026, with its
-  `VERIFICATION.md`. No rule reads it.
 - `reviews/` holds the confidential referee reports. It is ignored here, and
   nothing from it goes into a commit or a push.
-- Since October 2026 the paper uses the pipeline's Figure 1
-  (`artefacts/figures/fits.pdf`), the benchmark table and the time table. The hand-placed
-  2024 files `paper/fits.pdf` and `paper/convergence.pdf` are no longer used,
-  and the paper no longer has a convergence figure, so the Snakefile's
-  `convergence` figure is unused too.
 - The `upstream` remote (Alex Hagemeister's fork) has a separate refactor from
   March 2026 that this history does not include.

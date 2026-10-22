@@ -1,5 +1,6 @@
-"""notes/bias-dimension.tex, one cell: one estimator on one copies<p> DGP
-(biases/copies.py) over a block of repetitions, on one thread."""
+"""Section 4.3, claim 1 with more covariates (tab:bias-dimension), one cell: one
+estimator on one copies<p> DGP (biases/copies.py) over a block of repetitions,
+on one thread."""
 from biases import copies
 
 w = snakemake.wildcards

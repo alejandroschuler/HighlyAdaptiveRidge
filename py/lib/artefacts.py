@@ -87,8 +87,7 @@ def num(value: float, digits: int = 2) -> str:
 def int(value) -> str:  # noqa: A001
     """A count. siunitx supplies the thousands separator.
 
-    Named to match the R front-end, where this cannot be called integer()
-    without masking base::integer(). round() returns a Python int on its own,
+    The name shadows the builtin. round() returns a Python int on its own,
     so nothing here needs the shadowed builtin.
     """
     return rf"\num{{{round(value)}}}"

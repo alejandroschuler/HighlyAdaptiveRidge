@@ -1,4 +1,4 @@
-"""The depth path of HAR and first-order HAR.
+"""The depth path that HAR, mixed Sobolev KRR and MARS share.
 
 The section weights are w_s = 1(|s| <= D) for a depth D (decay 1). The path
 walks DEPTHS, cut below p and ending at the full depth p: steps of one at first,
