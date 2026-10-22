@@ -129,8 +129,10 @@ repair for each state. Load it when a task needs more than these rules.
   artefacts, since the unused convergence figure has no results on disk.
 - Section 4.3 (one table for each claim, `tab:bias-waves`, `tab:bias-rules`
   and `tab:bias-density`, and one figure of the truths for each claim,
-  `fig:bias-truths-waves`, `-rules` and `-density`; appendix C.3 has the
-  scaling of the truths and the edge checks of the grids) is the simulation
+  `fig:bias-truths-waves`, `-rules` and `-density`; the scaling of the truths
+  and the edge checks of the grids were appendix C.3, which is commented out
+  in `paper/sections/A3-experiments.tex`, so the paper does not print them) is
+  the simulation
   of the inductive biases of Section 3.4,
   adapted from `paper/notes/inductive-bias.tex` to the Section 4.1 estimators
   (HAR, MS-KRR, HAL, gradient boosted trees, radial basis KRR) tuned as there.
