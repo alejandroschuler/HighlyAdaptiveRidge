@@ -120,6 +120,11 @@ ESTIMATOR_CODE = {
     "enet": EST_BASE + lib(f"{EST}/enet.py"),
 }
 ESTIMATORS = list(ESTIMATOR_CODE)   # the order of the full tables, PAPER_ALL
+# The interpreters of the fits, as fixed paths: the project environment, and
+# the MARS environment. Not sys.executable, which names whichever Snakemake
+# install runs the dry run (the pre-push hook uses the one on PATH), and a
+# different value would count as a change of params and mark every fit stale.
+PYTHON = ".venv/bin/python"
 MARS_PYTHON = "envs/mars/.venv/bin/python"
 
 # The paper's Section 4: the estimators of the main text, in its order, and all
@@ -257,7 +262,7 @@ rule artefacts_tex:
 
 def _python(wc):
     """The interpreter of an estimator's fits."""
-    return MARS_PYTHON if wc.method == "mars" else sys.executable
+    return MARS_PYTHON if wc.method == "mars" else PYTHON
 
 
 rule table1_fit:
